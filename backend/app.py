@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote_plus
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -6,10 +7,22 @@ from flask_sqlalchemy import SQLAlchemy
 app = Flask(__name__)
 CORS(app)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-    'DATABASE_URL',
-    'sqlite:///students.db'
-)
+db_url = os.environ.get('DATABASE_URL')
+if not db_url:
+    db_user = os.environ.get('DATABASE_USER') or os.environ.get('POSTGRES_USER')
+    db_pass = os.environ.get('DATABASE_PASSWORD') or os.environ.get('POSTGRES_PASSWORD')
+    db_name = os.environ.get('DATABASE_NAME') or os.environ.get('POSTGRES_DB')
+    db_host = os.environ.get('DATABASE_HOST', 'localhost')
+    db_port = os.environ.get('DATABASE_PORT', '5432')
+
+    if db_user and db_pass and db_name:
+        user = quote_plus(db_user)
+        password = quote_plus(db_pass)
+        db_url = f'postgresql://{user}:{password}@{db_host}:{db_port}/{db_name}'
+    else:
+        db_url = 'sqlite:///students.db'
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
