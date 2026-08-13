@@ -1,0 +1,18 @@
+name: Deploy Student Project
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy application
+        run: |
+          cd /home/bhavyasree/student-project
+          git pull origin main
+          docker compose build
+          docker compose up -d
