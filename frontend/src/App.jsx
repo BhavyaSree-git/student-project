@@ -87,7 +87,7 @@ function App() {
   const [status, setStatus] = useState({ message: '', error: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const apiUrl = 'http://192.168.1.76:5000/api/students';
+  const apiUrl = 'http://192.168.1.109:5000/api/students';
 
   const selectedDepartment = selectedStudent?.department || ''
   const selectedYear = selectedStudent?.year || ''
