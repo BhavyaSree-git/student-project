@@ -89,7 +89,7 @@ function App() {
   const [aiSummary, setAiSummary] = useState('')
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
 
-  const apiUrl = 'http://192.168.68.115:5000/api/students';
+  const apiUrl = 'http://192.168.68.100:5000/api/students';
   const rollNumberValue = form.roll_number === '' ? null : Number(form.roll_number)
   const hasValidRollNumber = Number.isSafeInteger(rollNumberValue) && rollNumberValue >= 0
 
