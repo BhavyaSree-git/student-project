@@ -88,6 +88,8 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const apiUrl = 'http://192.168.68.110:5000/api/students';
+  const rollNumberValue = form.roll_number === '' ? null : Number(form.roll_number)
+  const hasValidRollNumber = Number.isSafeInteger(rollNumberValue) && rollNumberValue >= 0
 
   const selectedDepartment = selectedStudent?.department || ''
   const selectedYear = selectedStudent?.year || ''
@@ -266,6 +268,11 @@ function App() {
 
   const handleSubmit = (event) => {
     event.preventDefault()
+    if (!hasValidRollNumber) {
+      setStatus({ message: '', error: 'Roll number must be a whole number.' })
+      return
+    }
+
     setIsSubmitting(true)
     const method = selectedId ? 'PUT' : 'POST'
     const url = selectedId ? `${apiUrl}/${selectedId}` : apiUrl
@@ -508,10 +515,13 @@ function App() {
                 <label>
                   Roll Number
                   <input
-                    type="text"
+                    type="number"
                     name="roll_number"
                     value={form.roll_number}
                     onChange={handleChange}
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
                     required
                   />
                 </label>

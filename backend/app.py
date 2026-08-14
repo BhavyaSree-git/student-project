@@ -47,6 +47,12 @@ class Student(db.Model):
 
 required_fields = ['name', 'roll_number', 'email', 'department', 'year']
 
+
+def normalize_roll_number(value):
+    """Return an integer-form roll number or None when it is invalid."""
+    roll_number = str(value).strip()
+    return roll_number if roll_number.isascii() and roll_number.isdigit() else None
+
 class Subject(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
@@ -191,9 +197,13 @@ def create_student():
     if missing:
         return jsonify({'error': 'Missing fields: ' + ', '.join(missing)}), 400
 
+    roll_number = normalize_roll_number(data['roll_number'])
+    if roll_number is None:
+        return jsonify({'error': 'Roll number must be a whole number.'}), 400
+
     student = Student(
         name=data['name'].strip(),
-        roll_number=data['roll_number'].strip(),
+        roll_number=roll_number,
         email=data['email'].strip(),
         department=data['department'].strip(),
         year=data['year'].strip(),
@@ -218,7 +228,15 @@ def update_student(student_id):
         return jsonify({'error': 'Student not found'}), 404
 
     data = request.get_json() or {}
+    if 'roll_number' in data:
+        roll_number = normalize_roll_number(data['roll_number'])
+        if roll_number is None:
+            return jsonify({'error': 'Roll number must be a whole number.'}), 400
+        student.roll_number = roll_number
+
     for field in required_fields:
+        if field == 'roll_number':
+            continue
         if field in data and str(data[field]).strip():
             setattr(student, field, str(data[field]).strip())
 
