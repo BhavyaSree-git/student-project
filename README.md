@@ -1,1 +1,1 @@
-# this is my just student-project with OpnAI
+# this is my just student-project with OpenAI
