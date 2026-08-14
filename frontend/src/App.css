@@ -573,10 +573,52 @@ button:hover {
   gap: 10px;
 }
 
+.student-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.ai-summary-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.ai-summary-card {
+  margin: 0 22px 22px;
+  padding: 18px;
+  border: 1px solid #ddd6fe;
+  border-radius: 14px;
+  background: #f5f3ff;
+}
+
+.ai-summary-card h3 {
+  margin: 0 0 8px;
+  color: #4c1d95;
+  font-size: 0.95rem;
+}
+
+.ai-summary-card p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 900px) {
 
   .page-grid,
   .details-grid {
     grid-template-columns: 1fr;
+  }
+
+  .student-detail-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-summary-button {
+    width: fit-content;
   }
 }

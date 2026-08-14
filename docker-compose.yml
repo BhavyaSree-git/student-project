@@ -27,6 +27,7 @@ services:
       FLASK_DEBUG: ${FLASK_DEBUG}
       PORT: ${PORT}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-nano}
     ports:
       - "5000:5000"
     depends_on:

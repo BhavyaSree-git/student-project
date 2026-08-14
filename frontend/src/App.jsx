@@ -86,6 +86,8 @@ function App() {
   const [isEditingAttendance, setIsEditingAttendance] = useState(true)
   const [status, setStatus] = useState({ message: '', error: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [aiSummary, setAiSummary] = useState('')
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
 
   const apiUrl = 'http://192.168.68.115:5000/api/students';
   const rollNumberValue = form.roll_number === '' ? null : Number(form.roll_number)
@@ -353,10 +355,44 @@ function App() {
 
   const handleSelectStudent = (student) => {
     setSelectedStudent(null)
+    setAiSummary('')
     resetSubjectForm()
     setSelectedId(null)
     resetForm()
     loadStudentDetail(student.id)
+  }
+
+  const handleGenerateSummary = () => {
+    if (!selectedStudent) {
+      return
+    }
+
+    setIsGeneratingSummary(true)
+    setAiSummary('')
+    fetch(`${apiUrl.replace('/students', '')}/ai/student-summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id: selectedStudent.id }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          return response.json().then((body) => {
+            throw new Error(body.error || 'Unable to generate the AI summary.')
+          })
+        }
+        return response.json()
+      })
+      .then((data) => {
+        setAiSummary(data.summary)
+        setStatus({ message: 'AI performance summary generated.', error: '' })
+      })
+      .catch((error) => {
+        console.error(error)
+        setStatus({ message: '', error: error.message })
+      })
+      .finally(() => {
+        setIsGeneratingSummary(false)
+      })
   }
 
   const handleSubjectSubmit = (event) => {
@@ -621,11 +657,19 @@ function App() {
         {selectedStudent && (
           <section className="details-grid">
             <div className="student-detail-card">
-              <div className="card-header">
+              <div className="card-header student-detail-header">
                 <div>
                   <h2>Student Details</h2>
                   <p className="card-description">Selected student academic information and performance summary.</p>
                 </div>
+                <button
+                  type="button"
+                  className="row-button ai-summary-button"
+                  onClick={handleGenerateSummary}
+                  disabled={isGeneratingSummary}
+                >
+                  {isGeneratingSummary ? 'Generating...' : 'AI Summary'}
+                </button>
               </div>
               <div className="detail-list">
                 <div>
@@ -649,6 +693,12 @@ function App() {
                   <p>{selectedStudent.year}</p>
                 </div>
               </div>
+              {(isGeneratingSummary || aiSummary) && (
+                <section className="ai-summary-card" aria-live="polite">
+                  <h3>AI Student Performance Summary</h3>
+                  <p>{isGeneratingSummary ? 'Generating your summary...' : aiSummary}</p>
+                </section>
+              )}
             </div>
 
             <div className="subject-attendance-wrapper">

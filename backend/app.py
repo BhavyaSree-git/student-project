@@ -1,8 +1,10 @@
 import os
+import json
 from urllib.parse import quote_plus
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from openai import APIConnectionError, APIError, AuthenticationError, OpenAI, RateLimitError
 
 app = Flask(__name__)
 CORS(app)
@@ -46,6 +48,7 @@ class Student(db.Model):
         }
 
 required_fields = ['name', 'roll_number', 'email', 'department', 'year']
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-5.4-nano')
 
 
 def normalize_roll_number(value):
@@ -158,6 +161,25 @@ def calculate_student_performance(student):
         'performance_status': performance_state,
     }
 
+
+def build_student_summary_data(student):
+    """Create the minimum academic data needed for an AI performance summary."""
+    performance = calculate_student_performance(student)
+    attendance = student.attendance.to_dict() if student.attendance else {
+        'total_classes': 0,
+        'attended_classes': 0,
+    }
+    return {
+        'name': student.name,
+        'department': student.department,
+        'year': student.year,
+        'subjects': [subject.to_dict() for subject in student.subjects],
+        'overall_percentage': performance['average_percentage'],
+        'total_marks': performance['total_marks'],
+        'attendance': attendance,
+        'attendance_percentage': performance['attendance_percentage'],
+    }
+
 with app.app_context():
     db.create_all()
 
@@ -187,6 +209,56 @@ def get_student(student_id):
         'subjects': [subject.to_dict() for subject in student.subjects],
         'attendance': student.attendance.to_dict() if student.attendance else {'total_classes': 0, 'attended_classes': 0},
         **performance,
+    })
+
+
+@app.route('/api/ai/student-summary', methods=['POST'])
+def generate_student_summary():
+    """Generate a concise, educational performance summary for one student."""
+    data = request.get_json(silent=True) or {}
+    try:
+        student_id = int(data.get('student_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'student_id must be a whole number.'}), 400
+
+    student = db.session.get(Student, student_id)
+    if student is None:
+        return jsonify({'error': 'Student not found'}), 404
+    if not os.environ.get('OPENAI_API_KEY'):
+        return jsonify({'error': 'OpenAI API key is not configured.'}), 503
+
+    student_data = build_student_summary_data(student)
+    instructions = (
+        'You are an educational support assistant. Write a supportive student performance '
+        'summary in 100 words or fewer. Use only the provided data. Mention academic performance, '
+        'attendance, strengths, and practical improvement suggestions when the data supports them. '
+        'Do not invent facts, make medical or psychological claims, or use harsh language.'
+    )
+
+    try:
+        client = OpenAI()
+        response = client.responses.create(
+            model=OPENAI_MODEL,
+            instructions=instructions,
+            input=json.dumps(student_data),
+            max_output_tokens=250,
+        )
+        summary = response.output_text.strip()
+    except AuthenticationError:
+        return jsonify({'error': 'OpenAI API key is invalid.'}), 503
+    except RateLimitError:
+        return jsonify({'error': 'OpenAI request limit reached. Please try again later.'}), 429
+    except APIConnectionError:
+        return jsonify({'error': 'Unable to connect to OpenAI. Please try again later.'}), 503
+    except APIError:
+        return jsonify({'error': 'Unable to generate the AI summary. Please try again later.'}), 502
+
+    if not summary:
+        return jsonify({'error': 'OpenAI returned an empty summary.'}), 502
+
+    return jsonify({
+        'student_id': student.id,
+        'summary': summary,
     })
 
 @app.route('/api/students', methods=['POST'])
