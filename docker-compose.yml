@@ -26,6 +26,7 @@ services:
       DATABASE_PORT: 5432
       FLASK_DEBUG: ${FLASK_DEBUG}
       PORT: ${PORT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     ports:
       - "5000:5000"
     depends_on:
