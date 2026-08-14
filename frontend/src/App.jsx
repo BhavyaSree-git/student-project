@@ -87,7 +87,7 @@ function App() {
   const [status, setStatus] = useState({ message: '', error: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const apiUrl = 'http://192.168.68.110:5000/api/students';
+  const apiUrl = 'http://192.168.68.115:5000/api/students';
   const rollNumberValue = form.roll_number === '' ? null : Number(form.roll_number)
   const hasValidRollNumber = Number.isSafeInteger(rollNumberValue) && rollNumberValue >= 0
 
