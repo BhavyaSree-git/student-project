@@ -659,20 +659,26 @@ function App() {
 
         {selectedStudent && (
           <section className="details-grid">
+            <div className="student-details-toolbar">
+              <div>
+                <h2>Student Details</h2>
+                <p className="card-description">Selected student academic information and performance summary.</p>
+              </div>
+              <button
+                type="button"
+                className="row-button ai-summary-button"
+                onClick={handleGenerateSummary}
+                disabled={isGeneratingSummary}
+              >
+                {isGeneratingSummary ? 'Generating...' : 'AI Summary'}
+              </button>
+            </div>
+
             <div className="student-detail-card">
               <div className="card-header student-detail-header">
                 <div>
-                  <h2>Student Details</h2>
-                  <p className="card-description">Selected student academic information and performance summary.</p>
+                  <h2>Student Overview</h2>
                 </div>
-                <button
-                  type="button"
-                  className="row-button ai-summary-button"
-                  onClick={handleGenerateSummary}
-                  disabled={isGeneratingSummary}
-                >
-                  {isGeneratingSummary ? 'Generating...' : 'AI Summary'}
-                </button>
               </div>
               <div className="detail-list">
                 <div>
