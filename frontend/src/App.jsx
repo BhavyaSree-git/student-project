@@ -87,9 +87,11 @@ function App() {
   const [status, setStatus] = useState({ message: '', error: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [aiSummary, setAiSummary] = useState('')
+  const [topStudents, setTopStudents] = useState([])
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
 
   const apiUrl = `${window.location.protocol}//${window.location.hostname}:5000/api/students`
+  const apiBaseUrl = apiUrl.replace('/students', '')
   const rollNumberValue = form.roll_number === '' ? null : Number(form.roll_number)
   const hasValidRollNumber = Number.isSafeInteger(rollNumberValue) && rollNumberValue >= 0
 
@@ -363,16 +365,16 @@ function App() {
   }
 
   const handleGenerateSummary = () => {
-    if (!selectedStudent) {
+    if (!selectedStudent && students.length === 0) {
       return
     }
 
     setIsGeneratingSummary(true)
     setAiSummary('')
-    fetch(`${apiUrl.replace('/students', '')}/ai/student-summary`, {
-      method: 'POST',
+    setTopStudents([])
+    fetch(`${apiBaseUrl}/ai-summary`, {
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ student_id: selectedStudent.id }),
     })
       .then((response) => {
         if (!response.ok) {
@@ -383,8 +385,9 @@ function App() {
         return response.json()
       })
       .then((data) => {
-        setAiSummary(data.summary)
-        setStatus({ message: 'AI performance summary generated.', error: '' })
+        setTopStudents(data.top_students || [])
+        setAiSummary(data.summary || '')
+        setStatus({ message: 'AI top 3 performance summary generated.', error: '' })
       })
       .catch((error) => {
         console.error(error)
@@ -693,10 +696,31 @@ function App() {
                   <p>{selectedStudent.year}</p>
                 </div>
               </div>
-              {(isGeneratingSummary || aiSummary) && (
+              {(isGeneratingSummary || aiSummary || topStudents.length > 0) && (
                 <section className="ai-summary-card" aria-live="polite">
-                  <h3>AI Student Performance Summary</h3>
-                  <p>{isGeneratingSummary ? 'Generating your summary...' : aiSummary}</p>
+                  <h3>Top 3 Students</h3>
+                  {topStudents.length > 0 ? (
+                    <ul className="top-students-list">
+                      {topStudents.map((student, index) => (
+                        <li key={student.student_id}>
+                          <strong>#{index + 1} {student.name}</strong>
+                          <span>({student.department} • {student.year})</span>
+                          <span>Score: {student.score}%</span>
+                          <span>Average: {student.average_percentage}%</span>
+                          <span>Attendance: {student.attendance_percentage}%</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>{isGeneratingSummary ? 'Generating your summary...' : 'No ranking data available yet.'}</p>
+                  )}
+
+                  {aiSummary && (
+                    <>
+                      <h3>AI Performance Summary</h3>
+                      <p>{aiSummary}</p>
+                    </>
+                  )}
                 </section>
               )}
             </div>

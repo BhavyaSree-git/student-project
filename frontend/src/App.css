@@ -599,6 +599,28 @@ button:hover {
   font-size: 0.95rem;
 }
 
+.top-students-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.top-students-list li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e9d5ff;
+  border-radius: 10px;
+  color: #334155;
+}
+
+.top-students-list strong {
+  color: #4c1d95;
+}
+
 .ai-summary-card p {
   margin: 0;
   color: #334155;

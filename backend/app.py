@@ -180,6 +180,36 @@ def build_student_summary_data(student):
         'attendance_percentage': performance['attendance_percentage'],
     }
 
+
+def calculate_student_rank_score(student):
+    """Return a numeric ranking score for overall student performance."""
+    performance = calculate_student_performance(student)
+    average_percentage = performance['average_percentage']
+    attendance_percentage = performance['attendance_percentage']
+    return round((average_percentage * 0.7) + (attendance_percentage * 0.3), 2)
+
+
+def get_top_students(limit=3):
+    """Return the top students sorted by academic and attendance performance."""
+    students = Student.query.all()
+    ranked = []
+    for student in students:
+        performance = calculate_student_performance(student)
+        ranked.append({
+            'student_id': student.id,
+            'name': student.name,
+            'roll_number': student.roll_number,
+            'department': student.department,
+            'year': student.year,
+            'average_percentage': performance['average_percentage'],
+            'attendance_percentage': performance['attendance_percentage'],
+            'total_marks': performance['total_marks'],
+            'score': calculate_student_rank_score(student),
+        })
+
+    ranked.sort(key=lambda item: (-item['score'], -(item['average_percentage']), -(item['attendance_percentage'])))
+    return ranked[:limit]
+
 with app.app_context():
     db.create_all()
 
@@ -209,6 +239,60 @@ def get_student(student_id):
         'subjects': [subject.to_dict() for subject in student.subjects],
         'attendance': student.attendance.to_dict() if student.attendance else {'total_classes': 0, 'attended_classes': 0},
         **performance,
+    })
+
+
+@app.route('/api/ai-summary', methods=['GET', 'POST'])
+def generate_top_students_summary():
+    """Generate a top-3 student performance summary and AI narrative."""
+    if not os.environ.get('OPENAI_API_KEY'):
+        return jsonify({'error': 'OpenAI API key is not configured.'}), 503
+
+    limit = 3
+    payload = request.get_json(silent=True) or {}
+    if payload.get('limit'):
+        try:
+            limit = max(1, min(int(payload['limit']), 10))
+        except ValueError:
+            return jsonify({'error': 'limit must be a whole number.'}), 400
+
+    top_students = get_top_students(limit=limit)
+    if not top_students:
+        return jsonify({
+            'top_students': [],
+            'summary': 'No student records are available yet for AI analysis.',
+        })
+
+    instructions = (
+        'You are an educational performance coach. Review the top student list and write a concise '
+        'summary in 120 words or fewer. Mention who is leading, highlight strengths in academic performance '
+        'and attendance, and give one practical improvement suggestion for the group.'
+    )
+
+    try:
+        client = OpenAI()
+        response = client.responses.create(
+            model=OPENAI_MODEL,
+            instructions=instructions,
+            input=json.dumps({'top_students': top_students}),
+            max_output_tokens=250,
+        )
+        summary = response.output_text.strip()
+    except AuthenticationError:
+        return jsonify({'error': 'OpenAI API key is invalid.'}), 503
+    except RateLimitError:
+        return jsonify({'error': 'OpenAI request limit reached. Please try again later.'}), 429
+    except APIConnectionError:
+        return jsonify({'error': 'Unable to connect to OpenAI. Please try again later.'}), 503
+    except APIError:
+        return jsonify({'error': 'Unable to generate the AI summary. Please try again later.'}), 502
+
+    if not summary:
+        return jsonify({'error': 'OpenAI returned an empty summary.'}), 502
+
+    return jsonify({
+        'top_students': top_students,
+        'summary': summary,
     })
 
 
