@@ -1,943 +1,622 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import './App.css'
 
-const initialForm = {
-  name: '',
-  roll_number: '',
+const API_BASE = 'http://localhost:5000/api'
+
+const initialCollegeForm = {
+  college_name: '',
+  university_name: '',
   email: '',
-  department: '',
-  year: '',
+  phone: '',
+  address: '',
+  city: '',
+  state: '',
+  country: '',
+  pincode: '',
+  website: '',
+  college_type: 'Government',
+  password: '',
+  confirm_password: '',
 }
 
-const initialSubjectForm = {
-  subject_name: '',
-  marks_obtained: '',
-  max_marks: '',
-}
-
-const initialAttendanceForm = {
-  total_classes: '',
-  attended_classes: '',
-}
-
-const yearOrder = ['1st Year', '2nd Year', '3rd Year', '4th Year']
-
-const departmentSubjectOptions = {
-  CSE: {
-    '1st Year': ['Programming Fundamentals', 'Engineering Mathematics', 'Physics', 'English'],
-    '2nd Year': ['Data Structures', 'Digital Logic', 'Computer Organization', 'Object Oriented Programming'],
-    '3rd Year': ['Algorithms', 'Database Management', 'Operating Systems', 'Computer Networks'],
-    '4th Year': ['Machine Learning', 'Web Development', 'Software Engineering', 'Cyber Security'],
-  },
-  ECE: {
-    '1st Year': ['Basic Electronics', 'Engineering Mathematics', 'Physics', 'Chemistry'],
-    '2nd Year': ['Circuit Theory', 'Signals and Systems', 'Analog Electronics', 'Probability and Statistics'],
-    '3rd Year': ['Microprocessors', 'Digital Communication', 'Control Systems', 'Electromagnetics'],
-    '4th Year': ['VLSI Design', 'Wireless Networks', 'Embedded Systems', 'Optical Communication'],
-  },
-  EEE: {
-    '1st Year': ['Basic Electrical Engineering', 'Engineering Mathematics', 'Physics', 'Chemistry'],
-    '2nd Year': ['Circuit Analysis', 'Electromagnetics', 'Power Systems', 'Signals and Systems'],
-    '3rd Year': ['Control Engineering', 'Electrical Machines', 'Power Electronics', 'Instrumentation'],
-    '4th Year': ['Renewable Energy', 'Smart Grid', 'High Voltage Engineering', 'Electric Drives'],
-  },
-  Mechanical: {
-    '1st Year': ['Engineering Mechanics', 'Engineering Graphics', 'Material Science', 'Mathematics II'],
-    '2nd Year': ['Thermodynamics', 'Strength of Materials', 'Fluid Mechanics', 'Manufacturing Processes'],
-    '3rd Year': ['Machine Design', 'Heat Transfer', 'Dynamics of Machines', 'Industrial Engineering'],
-    '4th Year': ['Robotics', 'Automobile Engineering', 'Energy Systems', 'Production Planning'],
-  },
-  Civil: {
-    '1st Year': ['Engineering Drawing', 'Mathematics II', 'Physics', 'Basic Mechanics'],
-    '2nd Year': ['Surveying', 'Strength of Materials', 'Structural Analysis', 'Fluid Mechanics'],
-    '3rd Year': ['Geotechnical Engineering', 'Transportation Engineering', 'Environmental Engineering', 'Concrete Technology'],
-    '4th Year': ['Bridge Engineering', 'Construction Management', 'Hydraulics', 'Urban Planning'],
-  },
-  IT: {
-    '1st Year': ['Computer Fundamentals', 'Engineering Mathematics', 'Physics', 'Communication Skills'],
-    '2nd Year': ['Database Systems', 'Web Technologies', 'Data Structures', 'Discrete Mathematics'],
-    '3rd Year': ['Software Testing', 'Information Security', 'Human Computer Interaction', 'Cloud Computing'],
-    '4th Year': ['Big Data Analytics', 'DevOps', 'Cyber Security', 'Internet of Things'],
-  },
-}
-
-const defaultYearSubjects = {
-  '1st Year': ['Mathematics', 'Physics', 'Chemistry', 'English'],
-  '2nd Year': ['Data Structures', 'Engineering Mechanics', 'Circuit Theory', 'Environmental Science'],
-  '3rd Year': ['Algorithms', 'Materials Science', 'Computer Networks', 'Control Systems'],
-  '4th Year': ['Project Management', 'Machine Learning', 'Power Systems', 'Professional Ethics'],
-}
-
-const getAvailableSubjects = (department, year) => {
-  if (department && departmentSubjectOptions[department]?.[year]) {
-    return departmentSubjectOptions[department][year]
-  }
-  return defaultYearSubjects[year] || []
-}
+const initialAdminLogin = { username: 'admin', password: 'admin123' }
+const initialCollegeLogin = { email: '', password: '' }
+const initialTeacherLogin = { email: '', password: '' }
 
 function App() {
-  const [students, setStudents] = useState([])
-  const [form, setForm] = useState(initialForm)
-  const [selectedId, setSelectedId] = useState(null)
-  const [selectedStudent, setSelectedStudent] = useState(null)
-  const [subjectForm, setSubjectForm] = useState(initialSubjectForm)
-  const [editingSubjectId, setEditingSubjectId] = useState(null)
-  const [attendanceForm, setAttendanceForm] = useState(initialAttendanceForm)
-  const [isEditingAttendance, setIsEditingAttendance] = useState(true)
+  const [screen, setScreen] = useState('home')
   const [status, setStatus] = useState({ message: '', error: '' })
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [adminLogin, setAdminLogin] = useState(initialAdminLogin)
+  const [collegeLogin, setCollegeLogin] = useState(initialCollegeLogin)
+  const [teacherLogin, setTeacherLogin] = useState(initialTeacherLogin)
+  const [collegeForm, setCollegeForm] = useState(initialCollegeForm)
+  const [collegeData, setCollegeData] = useState(null)
+  const [teacherData, setTeacherData] = useState(null)
+  const [adminData, setAdminData] = useState(null)
+  const [colleges, setColleges] = useState([])
+  const [teachers, setTeachers] = useState([])
+  const [students, setStudents] = useState([])
+  const [teacherDashboard, setTeacherDashboard] = useState(null)
+  const [aiTopStudents, setAiTopStudents] = useState([])
   const [aiSummary, setAiSummary] = useState('')
-  const [topStudents, setTopStudents] = useState([])
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
 
-  const apiUrl = `${window.location.protocol}//${window.location.hostname}:5000/api/students`
-  const apiBaseUrl = apiUrl.replace('/students', '')
-  const rollNumberValue = form.roll_number === '' ? null : Number(form.roll_number)
-  const hasValidRollNumber = Number.isSafeInteger(rollNumberValue) && rollNumberValue >= 0
-
-  const selectedDepartment = selectedStudent?.department || ''
-  const selectedYear = selectedStudent?.year || ''
-  const availableSubjects = getAvailableSubjects(selectedDepartment, selectedYear)
-
-  const marksObtainedValue = subjectForm.marks_obtained === '' ? null : Number(subjectForm.marks_obtained)
-  const maxMarksValue = subjectForm.max_marks === '' ? null : Number(subjectForm.max_marks)
-  const subjectValidationMessages = []
-
-  if (!subjectForm.subject_name) {
-    subjectValidationMessages.push('Choose a subject before adding marks.')
-  }
-  if (subjectForm.marks_obtained !== '' && (isNaN(marksObtainedValue) || marksObtainedValue < 0)) {
-    subjectValidationMessages.push('Marks obtained must be zero or more.')
-  }
-  if (subjectForm.max_marks !== '' && (isNaN(maxMarksValue) || maxMarksValue <= 0)) {
-    subjectValidationMessages.push('Maximum marks must be greater than zero.')
-  }
-  if (
-    marksObtainedValue !== null &&
-    maxMarksValue !== null &&
-    marksObtainedValue > maxMarksValue
-  ) {
-    subjectValidationMessages.push('Marks obtained cannot exceed maximum marks.')
-  }
-
-  const selectedStudentSubjects = selectedStudent?.subjects ?? []
-  const totalMarksObtained = selectedStudentSubjects.reduce(
-    (sum, subject) => sum + Number(subject.marks_obtained || 0),
-    0
-  )
-  const totalMaxMarks = selectedStudentSubjects.reduce(
-    (sum, subject) => sum + Number(subject.max_marks || 0),
-    0
-  )
-  const overallPercentage = totalMaxMarks > 0 ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0
-
-  const totalClassesValue = attendanceForm.total_classes === '' ? null : Number(attendanceForm.total_classes)
-  const attendedClassesValue = attendanceForm.attended_classes === '' ? null : Number(attendanceForm.attended_classes)
-  const attendanceValidationMessages = []
-
-  if (attendanceForm.total_classes === '' || isNaN(totalClassesValue) || totalClassesValue <= 0) {
-    attendanceValidationMessages.push('Total classes must be greater than 0.')
-  }
-  if (attendanceForm.attended_classes === '' || isNaN(attendedClassesValue) || attendedClassesValue < 0) {
-    attendanceValidationMessages.push('Classes attended cannot be negative.')
-  }
-  if (
-    totalClassesValue !== null &&
-    attendedClassesValue !== null &&
-    attendedClassesValue > totalClassesValue
-  ) {
-    attendanceValidationMessages.push('Classes attended cannot exceed total classes.')
-  }
-
-  const attendanceRate =
-    selectedStudent?.attendance?.total_classes > 0
-      ? Math.round(
-        (Number(selectedStudent.attendance.attended_classes || 0) /
-          Number(selectedStudent.attendance.total_classes || 1)) *
-        100
-      )
-      : null
-  const attendanceStatus = attendanceRate !== null
-    ? attendanceRate >= 75
-      ? 'good'
-      : attendanceRate >= 60
-        ? 'warning'
-        : 'critical'
-    : null
-  const performanceLabel = totalMaxMarks
-    ? overallPercentage >= 90
-      ? 'Excellent performance'
-      : overallPercentage >= 75
-        ? 'Strong standing'
-        : overallPercentage >= 60
-          ? 'Satisfactory progress'
-          : 'Needs attention'
-    : 'No scores yet'
-  const hasSavedAttendance = selectedStudent?.attendance?.total_classes > 0
-  const showAttendanceForm = !hasSavedAttendance || isEditingAttendance
-
-  const loadStudents = () => {
-    fetch(apiUrl)
-      .then((response) => response.json())
-      .then((data) => {
-        setStudents(data)
-        setStatus({ message: '', error: '' })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({
-          message: '',
-          error: 'Unable to load students. Is the Flask backend running?',
-        })
-      })
-  }
-
-  const loadStudentDetail = (studentId) => {
-    fetch(`${apiUrl}/${studentId}`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Student not found')
-        }
-        return response.json()
-      })
-      .then((data) => {
-        setSelectedStudent(data)
-        setAttendanceForm({
-          total_classes: data.attendance?.total_classes ?? '',
-          attended_classes: data.attendance?.attended_classes ?? '',
-        })
-        setIsEditingAttendance(!data.attendance || Number(data.attendance.total_classes) <= 0)
-        setStatus({ message: `Loaded details for ${data.name}.`, error: '' })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({ message: '', error: 'Unable to load student details.' })
-      })
-  }
-
-  useEffect(() => {
-    loadStudents()
-  }, [])
-
-  useEffect(() => {
-    if (status.message) {
-      const timer = window.setTimeout(() => {
-        setStatus((current) => ({ ...current, message: '' }))
-      }, 4000)
-      return () => window.clearTimeout(timer)
+  const totalCollegeStats = useMemo(() => {
+    const counts = {
+      pending: colleges.filter((college) => college.approval_status === 'PENDING').length,
+      approved: colleges.filter((college) => college.approval_status === 'APPROVED').length,
+      rejected: colleges.filter((college) => college.approval_status === 'REJECTED').length,
+      active: colleges.filter((college) => college.is_active).length,
+      inactive: colleges.filter((college) => !college.is_active).length,
     }
-    if (status.error) {
-      const timer = window.setTimeout(() => {
-        setStatus((current) => ({ ...current, error: '' }))
-      }, 6000)
-      return () => window.clearTimeout(timer)
+    return counts
+  }, [colleges])
+
+  const fetchJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    })
+
+    const contentType = response.headers.get('content-type') || ''
+    const body = contentType.includes('application/json') ? await response.json() : await response.text()
+
+    if (!response.ok) {
+      const message = typeof body === 'string' ? body : body.error || 'Request failed.'
+      throw new Error(message)
     }
-  }, [status])
-
-  const resetForm = () => {
-    setForm(initialForm)
-    setSelectedId(null)
+    return body
   }
 
-  const resetSubjectForm = () => {
-    setSubjectForm(initialSubjectForm)
-    setEditingSubjectId(null)
-  }
-
-  const handleChange = (event) => {
-    const { name, value } = event.target
-    setForm((current) => ({ ...current, [name]: value }))
-  }
-
-  const handleSubjectChange = (event) => {
-    const { name, value } = event.target
-    setSubjectForm((current) => ({ ...current, [name]: value }))
-  }
-
-  const handleAttendanceChange = (event) => {
-    const { name, value } = event.target
-    setAttendanceForm((current) => ({ ...current, [name]: value }))
-  }
-
-  useEffect(() => {
-    if (!selectedStudent) {
-      return
+  const loadAdminDashboard = async () => {
+    try {
+      const dashboard = await fetchJson(`${API_BASE}/admin/dashboard`, { method: 'GET' })
+      const collegeResponse = await fetchJson(`${API_BASE}/admin/colleges`, { method: 'GET' })
+      setColleges(collegeResponse)
+      setAdminData(dashboard)
+      setScreen('admin-dashboard')
+      setStatus({ message: 'Admin dashboard loaded.', error: '' })
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
     }
+  }
 
-    const subjects = getAvailableSubjects(selectedStudent.department, selectedStudent.year)
-    if (subjectForm.subject_name && !subjects.includes(subjectForm.subject_name)) {
-      resetSubjectForm()
+  const loadCollegeDashboard = async () => {
+    try {
+      const profile = await fetchJson(`${API_BASE}/college/profile`, { method: 'GET' })
+      const teacherResponse = await fetchJson(`${API_BASE}/college/teachers`, { method: 'GET' })
+      setCollegeData(profile)
+      setTeachers(teacherResponse)
+      setScreen('college-dashboard')
+      setStatus({ message: 'College dashboard loaded.', error: '' })
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
     }
-  }, [selectedStudent])
+  }
 
-  const handleSubmit = (event) => {
+  const loadTeacherDashboard = async () => {
+    try {
+      const profile = await fetchJson(`${API_BASE}/teacher/profile`, { method: 'GET' })
+      const teacherDashboardData = await fetchJson(`${API_BASE}/teacher/dashboard`, { method: 'GET' })
+      const studentResponse = await fetchJson(`${API_BASE}/teacher/students`, { method: 'GET' })
+      setTeacherData(profile)
+      setTeacherDashboard(teacherDashboardData)
+      setStudents(studentResponse)
+      setScreen('teacher-dashboard')
+      setStatus({ message: 'Teacher dashboard loaded.', error: '' })
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    }
+  }
+
+  const handleAdminLoginSubmit = async (event) => {
     event.preventDefault()
-    if (!hasValidRollNumber) {
-      setStatus({ message: '', error: 'Roll number must be a whole number.' })
-      return
+    try {
+      const response = await fetchJson(`${API_BASE}/auth/admin/login`, {
+        method: 'POST',
+        body: JSON.stringify(adminLogin),
+      })
+      setAdminData(response.user)
+      await loadAdminDashboard()
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    }
+  }
+
+  const handleCollegeRegisterSubmit = async (event) => {
+    event.preventDefault()
+    try {
+      await fetchJson(`${API_BASE}/auth/college/register`, {
+        method: 'POST',
+        body: JSON.stringify(collegeForm),
+      })
+      setStatus({ message: 'College registered successfully. Awaiting admin approval.', error: '' })
+      setCollegeForm(initialCollegeForm)
+      setScreen('college-login')
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    }
+  }
+
+  const handleCollegeLoginSubmit = async (event) => {
+    event.preventDefault()
+    try {
+      await fetchJson(`${API_BASE}/auth/college/login`, {
+        method: 'POST',
+        body: JSON.stringify(collegeLogin),
+      })
+      await loadCollegeDashboard()
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    }
+  }
+
+  const handleTeacherLoginSubmit = async (event) => {
+    event.preventDefault()
+    try {
+      const response = await fetchJson(`${API_BASE}/auth/teacher/login`, {
+        method: 'POST',
+        body: JSON.stringify(teacherLogin),
+      })
+      setTeacherData(response.teacher)
+      await loadTeacherDashboard()
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    }
+  }
+
+  const handleCreateTeacher = async (event) => {
+    event.preventDefault()
+    const form = event.target
+    const payload = {
+      name: form.name.value,
+      email: form.email.value,
+      password: form.password.value,
+      confirm_password: form.confirm_password.value,
+      department: form.department.value,
+      subject: form.subject.value,
     }
 
-    setIsSubmitting(true)
-    const method = selectedId ? 'PUT' : 'POST'
-    const url = selectedId ? `${apiUrl}/${selectedId}` : apiUrl
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          return response.json().then((body) => {
-            throw new Error(body.error || 'Server error')
-          })
-        }
-        return response.json()
+    try {
+      const response = await fetchJson(`${API_BASE}/college/teachers`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
       })
-      .then(() => {
-        resetForm()
-        loadStudents()
-        if (selectedStudent?.id === selectedId) {
-          loadStudentDetail(selectedId)
-        }
-        setStatus({
-          message: selectedId ? 'Student updated successfully.' : 'Student added successfully.',
-          error: '',
-        })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({ message: '', error: error.message })
-      })
-      .finally(() => {
-        setIsSubmitting(false)
-      })
+      setTeachers((current) => [response.teacher, ...current])
+      setStatus({ message: 'Teacher created successfully.', error: '' })
+      form.reset()
+      setScreen('college-dashboard')
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    }
   }
 
-  const handleEdit = (student) => {
-    setSelectedId(student.id)
-    setForm({
-      name: student.name,
-      roll_number: student.roll_number,
-      email: student.email,
-      department: student.department,
-      year: student.year,
-    })
-    setStatus({ message: 'Editing student. Make changes and save.', error: '' })
+  const handleAdminAction = async (type, id, reason) => {
+    try {
+      const payload = reason ? { reason } : {}
+      await fetchJson(`${API_BASE}/admin/colleges/${id}/${type}`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      await loadAdminDashboard()
+      setStatus({ message: `College ${type} action completed.`, error: '' })
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    }
   }
 
-  const handleDelete = (studentId) => {
-    if (!window.confirm('Delete this student?')) {
-      return
+  const handleAddStudent = async (event) => {
+    event.preventDefault()
+    const form = event.target
+    const payload = {
+      student_id: form.student_id.value,
+      name: form.name.value,
+      email: form.email.value,
+      phone: form.phone.value,
+      date_of_birth: form.date_of_birth.value,
+      gender: form.gender.value,
+      department: form.department.value,
+      course: form.course.value,
+      year: form.year.value,
+      section: form.section.value,
     }
 
-    fetch(`${apiUrl}/${studentId}`, { method: 'DELETE' })
-      .then((response) => {
-        if (!response.ok) {
-          return response.json().then((body) => {
-            throw new Error(body.error || 'Server error')
-          })
-        }
-        return response.json()
+    try {
+      const response = await fetchJson(`${API_BASE}/students`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
       })
-      .then(() => {
-        if (selectedStudent?.id === studentId) {
-          setSelectedStudent(null)
-          resetSubjectForm()
-          setAttendanceForm(initialAttendanceForm)
-        }
-        loadStudents()
-        setStatus({ message: 'Student deleted successfully.', error: '' })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({ message: '', error: error.message })
-      })
-  }
-
-  const handleSelectStudent = (student) => {
-    setSelectedStudent(null)
-    setAiSummary('')
-    resetSubjectForm()
-    setSelectedId(null)
-    resetForm()
-    loadStudentDetail(student.id)
-  }
-
-  const handleGenerateSummary = () => {
-    if (!selectedStudent && students.length === 0) {
-      return
+      setStudents((current) => [response.student, ...current])
+      setStatus({ message: 'Student added successfully.', error: '' })
+      form.reset()
+      setScreen('teacher-dashboard')
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
     }
+  }
 
+  const handleAiSummary = async () => {
     setIsGeneratingSummary(true)
     setAiSummary('')
-    setTopStudents([])
-    fetch(`${apiBaseUrl}/ai-summary`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    })
-      .then((response) => {
-        if (!response.ok) {
-          return response.json().then((body) => {
-            throw new Error(body.error || 'Unable to generate the AI summary.')
-          })
-        }
-        return response.json()
-      })
-      .then((data) => {
-        setTopStudents(data.top_students || [])
-        setAiSummary(data.summary || '')
-        setStatus({ message: 'AI top 3 performance summary generated.', error: '' })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({ message: '', error: error.message })
-      })
-      .finally(() => {
-        setIsGeneratingSummary(false)
-      })
-  }
+    setAiTopStudents([])
 
-  const handleSubjectSubmit = (event) => {
-    event.preventDefault()
-    if (!selectedStudent) {
-      setStatus({ message: '', error: 'Select a student before adding subjects.' })
-      return
+    try {
+      const response = await fetchJson(`${API_BASE}/ai/summary`, { method: 'GET' })
+      setAiTopStudents(response.top_students || [])
+      setAiSummary(response.summary || '')
+      setStatus({ message: 'AI summary generated successfully.', error: '' })
+    } catch (error) {
+      setStatus({ message: '', error: error.message })
+    } finally {
+      setIsGeneratingSummary(false)
     }
+  }
 
-    if (subjectValidationMessages.length > 0) {
-      setStatus({ message: '', error: subjectValidationMessages[0] })
-      return
+  const logout = async () => {
+    try {
+      await fetchJson(`${API_BASE}/auth/logout`, { method: 'POST' })
+    } catch (error) {
+      console.error(error)
     }
-
-    const method = editingSubjectId ? 'PUT' : 'POST'
-    const url = editingSubjectId
-      ? `${apiUrl}/${selectedStudent.id}/subjects/${editingSubjectId}`
-      : `${apiUrl}/${selectedStudent.id}/subjects`
-
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subject_name: subjectForm.subject_name,
-        marks_obtained: Number(subjectForm.marks_obtained),
-        max_marks: Number(subjectForm.max_marks),
-      }),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          return response.json().then((body) => {
-            throw new Error(body.error || 'Server error')
-          })
-        }
-        return response.json()
-      })
-      .then(() => {
-        loadStudentDetail(selectedStudent.id)
-        resetSubjectForm()
-        setStatus({
-          message: editingSubjectId ? 'Subject updated successfully.' : 'Subject added successfully.',
-          error: '',
-        })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({ message: '', error: error.message })
-      })
+    setScreen('home')
+    setCollegeData(null)
+    setTeacherData(null)
+    setAdminData(null)
+    setCollegeLogin(initialCollegeLogin)
+    setTeacherLogin(initialTeacherLogin)
+    setAdminLogin(initialAdminLogin)
+    setStatus({ message: 'Logged out', error: '' })
   }
 
-  const handleEditSubject = (subject) => {
-    setEditingSubjectId(subject.id)
-    setSubjectForm({
-      subject_name: subject.subject_name,
-      marks_obtained: String(subject.marks_obtained),
-      max_marks: String(subject.max_marks),
-    })
-    setStatus({ message: 'Editing subject. Make changes and save.', error: '' })
-  }
+  const renderHome = () => (
+    <div className="role-grid">
+      <button className="role-card" onClick={() => setScreen('admin-login')}>
+        <strong>Admin</strong>
+        <span>Manage colleges and system approvals</span>
+      </button>
+      <button className="role-card" onClick={() => setScreen('college-register')}>
+        <strong>College</strong>
+        <span>Register and manage your institution</span>
+      </button>
+      <button className="role-card" onClick={() => setScreen('teacher-login')}>
+        <strong>Teacher</strong>
+        <span>Manage students, marks and attendance</span>
+      </button>
+    </div>
+  )
 
-  const handleDeleteSubject = (subjectId) => {
-    if (!selectedStudent) return
-    if (!window.confirm('Delete this subject?')) return
+  const renderAdminLogin = () => (
+    <div className="panel">
+      <h2>Admin Login</h2>
+      <form onSubmit={handleAdminLoginSubmit} className="stack-form">
+        <input value={adminLogin.username} onChange={(e) => setAdminLogin({ ...adminLogin, username: e.target.value })} placeholder="Username" />
+        <input type="password" value={adminLogin.password} onChange={(e) => setAdminLogin({ ...adminLogin, password: e.target.value })} placeholder="Password" />
+        <button className="primary-button" type="submit">Login</button>
+        <button type="button" className="secondary-button" onClick={() => setScreen('home')}>Back</button>
+      </form>
+    </div>
+  )
 
-    fetch(`${apiUrl}/${selectedStudent.id}/subjects/${subjectId}`, { method: 'DELETE' })
-      .then((response) => {
-        if (!response.ok) {
-          return response.json().then((body) => {
-            throw new Error(body.error || 'Server error')
-          })
-        }
-        return response.json()
-      })
-      .then(() => {
-        loadStudentDetail(selectedStudent.id)
-        resetSubjectForm()
-        setStatus({ message: 'Subject deleted successfully.', error: '' })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({ message: '', error: error.message })
-      })
-  }
+  const renderCollegeRegister = () => (
+    <div className="panel">
+      <h2>College Registration</h2>
+      <form onSubmit={handleCollegeRegisterSubmit} className="stack-form">
+        <div className="two-column">
+          <input value={collegeForm.college_name} onChange={(e) => setCollegeForm({ ...collegeForm, college_name: e.target.value })} placeholder="College Name" />
+          <input value={collegeForm.university_name} onChange={(e) => setCollegeForm({ ...collegeForm, university_name: e.target.value })} placeholder="University Name" />
+        </div>
+        <div className="two-column">
+          <input value={collegeForm.email} onChange={(e) => setCollegeForm({ ...collegeForm, email: e.target.value })} placeholder="College Email" />
+          <input value={collegeForm.phone} onChange={(e) => setCollegeForm({ ...collegeForm, phone: e.target.value })} placeholder="Phone Number" />
+        </div>
+        <input value={collegeForm.address} onChange={(e) => setCollegeForm({ ...collegeForm, address: e.target.value })} placeholder="Address" />
+        <div className="two-column">
+          <input value={collegeForm.city} onChange={(e) => setCollegeForm({ ...collegeForm, city: e.target.value })} placeholder="City" />
+          <input value={collegeForm.state} onChange={(e) => setCollegeForm({ ...collegeForm, state: e.target.value })} placeholder="State" />
+        </div>
+        <div className="two-column">
+          <input value={collegeForm.country} onChange={(e) => setCollegeForm({ ...collegeForm, country: e.target.value })} placeholder="Country" />
+          <input value={collegeForm.pincode} onChange={(e) => setCollegeForm({ ...collegeForm, pincode: e.target.value })} placeholder="Pincode" />
+        </div>
+        <div className="two-column">
+          <input value={collegeForm.website} onChange={(e) => setCollegeForm({ ...collegeForm, website: e.target.value })} placeholder="Website (optional)" />
+          <select value={collegeForm.college_type} onChange={(e) => setCollegeForm({ ...collegeForm, college_type: e.target.value })}>
+            <option>Government</option>
+            <option>Private</option>
+            <option>Autonomous</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div className="two-column">
+          <input type="password" value={collegeForm.password} onChange={(e) => setCollegeForm({ ...collegeForm, password: e.target.value })} placeholder="Password" />
+          <input type="password" value={collegeForm.confirm_password} onChange={(e) => setCollegeForm({ ...collegeForm, confirm_password: e.target.value })} placeholder="Confirm Password" />
+        </div>
+        <button className="primary-button" type="submit">Register College</button>
+        <button type="button" className="secondary-button" onClick={() => setScreen('college-login')}>Already registered? Login</button>
+      </form>
+    </div>
+  )
 
-  const handleAttendanceSubmit = (event) => {
-    event.preventDefault()
-    if (!selectedStudent) {
-      setStatus({ message: '', error: 'Select a student before updating attendance.' })
-      return
-    }
+  const renderCollegeLogin = () => (
+    <div className="panel">
+      <h2>College Login</h2>
+      <form onSubmit={handleCollegeLoginSubmit} className="stack-form">
+        <input value={collegeLogin.email} onChange={(e) => setCollegeLogin({ ...collegeLogin, email: e.target.value })} placeholder="College Email" />
+        <input type="password" value={collegeLogin.password} onChange={(e) => setCollegeLogin({ ...collegeLogin, password: e.target.value })} placeholder="Password" />
+        <button className="primary-button" type="submit">Login</button>
+        <button type="button" className="secondary-button" onClick={() => setScreen('college-register')}>Register</button>
+      </form>
+    </div>
+  )
 
-    fetch(`${apiUrl}/${selectedStudent.id}/attendance`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        total_classes: attendanceForm.total_classes,
-        attended_classes: attendanceForm.attended_classes,
-      }),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          return response.json().then((body) => {
-            throw new Error(body.error || 'Server error')
-          })
-        }
-        return response.json()
-      })
-      .then(() => {
-        loadStudentDetail(selectedStudent.id)
-        setIsEditingAttendance(false)
-        setStatus({ message: 'Attendance saved successfully.', error: '' })
-      })
-      .catch((error) => {
-        console.error(error)
-        setStatus({ message: '', error: error.message })
-      })
-  }
+  const renderTeacherLogin = () => (
+    <div className="panel">
+      <h2>Teacher Login</h2>
+      <form onSubmit={handleTeacherLoginSubmit} className="stack-form">
+        <input value={teacherLogin.email} onChange={(e) => setTeacherLogin({ ...teacherLogin, email: e.target.value })} placeholder="Teacher Email" />
+        <input type="password" value={teacherLogin.password} onChange={(e) => setTeacherLogin({ ...teacherLogin, password: e.target.value })} placeholder="Password" />
+        <button className="primary-button" type="submit">Login</button>
+        <button type="button" className="secondary-button" onClick={() => setScreen('home')}>Back</button>
+      </form>
+    </div>
+  )
+
+  const renderAdminDashboard = () => (
+    <div className="panel">
+      <div className="topbar">
+        <div>
+          <h2>Admin Dashboard</h2>
+          <p>Welcome, {adminData?.username || 'Admin'}</p>
+        </div>
+        <button className="secondary-button" onClick={logout}>Logout</button>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card"><span>Total Colleges</span><strong>{adminData ? colleges.length : 0}</strong></div>
+        <div className="stat-card"><span>Pending</span><strong>{totalCollegeStats.pending}</strong></div>
+        <div className="stat-card"><span>Approved</span><strong>{totalCollegeStats.approved}</strong></div>
+        <div className="stat-card"><span>Rejected</span><strong>{totalCollegeStats.rejected}</strong></div>
+        <div className="stat-card"><span>Active</span><strong>{totalCollegeStats.active}</strong></div>
+        <div className="stat-card"><span>Inactive</span><strong>{totalCollegeStats.inactive}</strong></div>
+        <div className="stat-card"><span>Teachers</span><strong>{teachers.length || 0}</strong></div>
+        <div className="stat-card"><span>Students</span><strong>{students.length || 0}</strong></div>
+      </div>
+
+      <div className="list-panel">
+        <h3>College Registrations</h3>
+        {colleges.length === 0 ? <p>No colleges found.</p> : (
+          <div className="table-list">
+            {colleges.map((college) => (
+              <div key={college.id} className="table-row">
+                <div>
+                  <strong>{college.college_name}</strong>
+                  <small>{college.email}</small>
+                </div>
+                <div><span className="tag">{college.approval_status}</span></div>
+                <div><span className="tag">{college.is_active ? 'Active' : 'Inactive'}</span></div>
+                <div className="actions">
+                  {college.approval_status !== 'APPROVED' && (
+                    <button onClick={() => handleAdminAction('approve', college.id)}>Approve</button>
+                  )}
+                  {college.approval_status !== 'REJECTED' && (
+                    <button onClick={() => {
+                      const reason = window.prompt('Rejection reason:') || 'No reason provided.'
+                      handleAdminAction('reject', college.id, reason)
+                    }}>Reject</button>
+                  )}
+                  {college.approval_status === 'APPROVED' && college.is_active && (
+                    <button onClick={() => {
+                      const reason = window.prompt('Deactivation reason:') || 'No reason provided.'
+                      handleAdminAction('deactivate', college.id, reason)
+                    }}>Deactivate</button>
+                  )}
+                  {college.approval_status === 'APPROVED' && !college.is_active && (
+                    <button onClick={() => handleAdminAction('activate', college.id)}>Activate</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderCollegeDashboard = () => (
+    <div className="panel">
+      <div className="topbar">
+        <div>
+          <h2>College Dashboard</h2>
+          <p>{collegeData?.college_name} • {collegeData?.university_name}</p>
+        </div>
+        <button className="secondary-button" onClick={logout}>Logout</button>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card"><span>College Name</span><strong>{collegeData?.college_name}</strong></div>
+        <div className="stat-card"><span>University</span><strong>{collegeData?.university_name}</strong></div>
+        <div className="stat-card"><span>Location</span><strong>{collegeData?.city}, {collegeData?.state}</strong></div>
+        <div className="stat-card"><span>Total Teachers</span><strong>{collegeData?.total_teachers || 0}</strong></div>
+        <div className="stat-card"><span>Total Students</span><strong>{collegeData?.total_students || 0}</strong></div>
+      </div>
+
+      <div className="button-row">
+        <button className="primary-button" onClick={() => setScreen('college-create-teacher')}>Create Teacher</button>
+        <button className="secondary-button" onClick={() => setScreen('college-teachers')}>View Teachers</button>
+        <button className="secondary-button" onClick={() => setScreen('college-profile')}>College Profile</button>
+      </div>
+
+      {screen === 'college-profile' && (
+        <div className="list-panel">
+          <h3>College Profile</h3>
+          <ul className="key-value-list">
+            <li><span>Email</span><strong>{collegeData?.email}</strong></li>
+            <li><span>Phone</span><strong>{collegeData?.phone}</strong></li>
+            <li><span>Address</span><strong>{collegeData?.address}</strong></li>
+            <li><span>Type</span><strong>{collegeData?.college_type}</strong></li>
+            <li><span>Status</span><strong>{collegeData?.approval_status}</strong></li>
+          </ul>
+        </div>
+      )}
+
+      {screen === 'college-teachers' && (
+        <div className="list-panel">
+          <h3>Teachers</h3>
+          {teachers.length === 0 ? <p>No teachers created yet.</p> : (
+            <div className="table-list">
+              {teachers.map((teacher) => (
+                <div key={teacher.id} className="table-row">
+                  <div><strong>{teacher.name}</strong><small>{teacher.email}</small></div>
+                  <div>{teacher.department}</div>
+                  <div>{teacher.subject}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderCreateTeacher = () => (
+    <div className="panel">
+      <h2>Create Teacher</h2>
+      <form onSubmit={handleCreateTeacher} className="stack-form">
+        <input name="name" placeholder="Teacher Name" />
+        <input name="email" placeholder="Teacher Email" />
+        <input type="password" name="password" placeholder="Password" />
+        <input type="password" name="confirm_password" placeholder="Confirm Password" />
+        <input name="department" placeholder="Department" />
+        <input name="subject" placeholder="Subject" />
+        <div className="button-row">
+          <button className="primary-button" type="submit">Create Teacher</button>
+          <button className="secondary-button" type="button" onClick={() => setScreen('college-dashboard')}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  )
+
+  const renderTeacherDashboard = () => (
+    <div className="panel">
+      <div className="topbar">
+        <div>
+          <h2>Teacher Dashboard</h2>
+          <p>{teacherData?.name} • {teacherData?.college_name}</p>
+        </div>
+        <button className="secondary-button" onClick={logout}>Logout</button>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card"><span>Teacher</span><strong>{teacherData?.name}</strong></div>
+        <div className="stat-card"><span>College</span><strong>{teacherDashboard?.college_name}</strong></div>
+        <div className="stat-card"><span>Department</span><strong>{teacherDashboard?.department}</strong></div>
+        <div className="stat-card"><span>Subject</span><strong>{teacherDashboard?.subject}</strong></div>
+        <div className="stat-card"><span>Total Students</span><strong>{teacherDashboard?.total_students || 0}</strong></div>
+        <div className="stat-card"><span>Avg Marks</span><strong>{teacherDashboard?.average_marks || 0}%</strong></div>
+        <div className="stat-card"><span>Avg Attendance</span><strong>{teacherDashboard?.average_attendance || 0}%</strong></div>
+      </div>
+
+      <div className="button-row">
+        <button className="primary-button" onClick={() => setScreen('teacher-add-student')}>Add Student</button>
+        <button className="secondary-button" onClick={() => setScreen('teacher-students')}>View Students</button>
+        <button className="secondary-button" onClick={handleAiSummary} disabled={isGeneratingSummary}>{isGeneratingSummary ? 'Generating...' : 'AI Summary'}</button>
+      </div>
+
+      {aiTopStudents.length > 0 && (
+        <div className="list-panel">
+          <h3>Top 3 Students</h3>
+          <div className="table-list">
+            {aiTopStudents.map((student, index) => (
+              <div key={student.student_id} className="table-row">
+                <div><strong>#{index + 1} {student.name}</strong></div>
+                <div>Marks: {student.marks}%</div>
+                <div>Attendance: {student.attendance}%</div>
+                <div>Overall: {student.overall_score}%</div>
+              </div>
+            ))}
+          </div>
+          {aiSummary && (
+            <div className="summary-box">
+              <h4>AI Summary</h4>
+              <p>{aiSummary}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {screen === 'teacher-students' && (
+        <div className="list-panel">
+          <h3>Students</h3>
+          {students.length === 0 ? <p>No students found.</p> : (
+            <div className="table-list">
+              {students.map((student) => (
+                <div key={student.id} className="table-row">
+                  <div><strong>{student.name}</strong><small>{student.student_id}</small></div>
+                  <div>{student.course}</div>
+                  <div>{student.year}</div>
+                  <div>{student.department}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderAddStudent = () => (
+    <div className="panel">
+      <h2>Add Student</h2>
+      <form onSubmit={handleAddStudent} className="stack-form">
+        <input name="student_id" placeholder="Student ID" />
+        <input name="name" placeholder="Student Name" />
+        <input name="email" placeholder="Email" />
+        <input name="phone" placeholder="Phone" />
+        <input name="date_of_birth" type="date" />
+        <select name="gender">
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+        </select>
+        <input name="department" placeholder="Department" />
+        <input name="course" placeholder="Course" />
+        <input name="year" placeholder="Year" />
+        <input name="section" placeholder="Section" />
+        <div className="button-row">
+          <button className="primary-button" type="submit">Save Student</button>
+          <button className="secondary-button" type="button" onClick={() => setScreen('teacher-dashboard')}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  )
 
   return (
-    <main className="app-container">
-      <div className="page-shell">
-        <header className="app-header">
-          <div className="header-copy">
-            <p className="eyebrow">Student Tracker</p>
-            <h1>Student Management Tracker</h1>
-            <p className="subtitle">Manage students and academic information in one clean workspace.</p>
+    <main className="app-shell">
+      <div className="container">
+        <header className="page-header">
+          <div>
+            <p className="eyebrow">Multi-role Academic Portal</p>
+            <h1>Student Management System</h1>
           </div>
+          {(screen !== 'home' && screen !== 'admin-login' && screen !== 'college-register' && screen !== 'college-login' && screen !== 'teacher-login') && (
+            <button className="secondary-button" onClick={logout}>Logout</button>
+          )}
         </header>
 
-        {(status.message || status.error) && (
-          <div className={`toast ${status.error ? 'toast-error' : 'toast-success'}`}>
-            {status.error || status.message}
-          </div>
-        )}
+        {status.message && <div className="toast success">{status.message}</div>}
+        {status.error && <div className="toast error">{status.error}</div>}
 
-        <section className="form-section">
-          <div className="student-form-card">
-            <div className="card-header">
-              <div>
-                <h2>{selectedId ? 'Edit Student' : 'Add Student'}</h2>
-                <p className="card-description">Use this form to add or update student information.</p>
-              </div>
-            </div>
-            <form onSubmit={handleSubmit} className="student-form">
-              <div className="form-grid">
-                <label>
-                  Name
-                  <input
-                    type="text"
-                    name="name"
-                    value={form.name}
-                    onChange={handleChange}
-                    required
-                  />
-                </label>
-                <label>
-                  Roll Number
-                  <input
-                    type="number"
-                    name="roll_number"
-                    value={form.roll_number}
-                    onChange={handleChange}
-                    min="0"
-                    step="1"
-                    inputMode="numeric"
-                    required
-                  />
-                </label>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    name="email"
-                    value={form.email}
-                    onChange={handleChange}
-                    required
-                  />
-                </label>
-                <label>
-                  Department
-                  <select name="department" value={form.department} onChange={handleChange} required>
-                    <option value="">Select Department</option>
-                    <option value="CSE">CSE</option>
-                    <option value="ECE">ECE</option>
-                    <option value="EEE">EEE</option>
-                    <option value="Mechanical">Mechanical</option>
-                    <option value="Civil">Civil</option>
-                    <option value="IT">IT</option>
-                  </select>
-                </label>
-                <label>
-                  Year
-                  <select name="year" value={form.year} onChange={handleChange} required>
-                    <option value="">Select Year</option>
-                    <option value="1st Year">1st Year</option>
-                    <option value="2nd Year">2nd Year</option>
-                    <option value="3rd Year">3rd Year</option>
-                    <option value="4th Year">4th Year</option>
-                  </select>
-                </label>
-              </div>
-              <div className="form-actions form-actions-bottom">
-                <button type="submit" className="primary-button" disabled={isSubmitting}>
-                  {isSubmitting ? 'Saving...' : selectedId ? 'Update Student' : 'Add Student'}
-                </button>
-                {selectedId && (
-                  <button type="button" className="secondary" onClick={resetForm}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
-
-          <div className="student-list-card">
-            <div className="card-header">
-              <div>
-                <h2>Student Details</h2>
-                <p className="card-description">Below is the student table with current records.</p>
-              </div>
-            </div>
-            {students.length === 0 ? (
-              <div className="empty-state-card">
-                <p className="empty-title">No students yet</p>
-                <p>Add a student with the form above to start tracking records.</p>
-              </div>
-            ) : (
-              <div className="student-table">
-                <div className="table-header">
-                  <span>Name</span>
-                  <span>Roll Number</span>
-                  <span>Email</span>
-                  <span>Department</span>
-                  <span>Year</span>
-                  <span aria-hidden="true"></span>
-                </div>
-                {students.map((student) => (
-                  <div key={student.id} className="table-row">
-                    <span>{student.name}</span>
-                    <span>{student.roll_number}</span>
-                    <span>{student.email}</span>
-                    <span>{student.department}</span>
-                    <span>{student.year}</span>
-                    <span className="row-actions">
-                      <button type="button" className="row-button" onClick={() => handleSelectStudent(student)}>
-                        View
-                      </button>
-                      <button type="button" className="row-button" onClick={() => handleEdit(student)}>
-                        Edit
-                      </button>
-                      <button type="button" className="row-button secondary" onClick={() => handleDelete(student.id)}>
-                        Delete
-                      </button>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {selectedStudent && (
-          <section className="details-grid">
-            <div className="student-details-toolbar">
-              <div>
-                <h2>Student Details</h2>
-                <p className="card-description">Selected student academic information and performance summary.</p>
-              </div>
-              <button
-                type="button"
-                className="row-button ai-summary-button"
-                onClick={handleGenerateSummary}
-                disabled={isGeneratingSummary}
-              >
-                {isGeneratingSummary ? 'Generating...' : 'AI Summary'}
-              </button>
-            </div>
-
-            <div className="student-detail-card">
-              <div className="card-header student-detail-header">
-                <div>
-                  <h2>Student Overview</h2>
-                </div>
-              </div>
-              <div className="detail-list">
-                <div>
-                  <p className="detail-label">Name</p>
-                  <p>{selectedStudent.name}</p>
-                </div>
-                <div>
-                  <p className="detail-label">Roll Number</p>
-                  <p>{selectedStudent.roll_number}</p>
-                </div>
-                <div>
-                  <p className="detail-label">Email</p>
-                  <p>{selectedStudent.email}</p>
-                </div>
-                <div>
-                  <p className="detail-label">Department</p>
-                  <p>{selectedStudent.department}</p>
-                </div>
-                <div>
-                  <p className="detail-label">Year</p>
-                  <p>{selectedStudent.year}</p>
-                </div>
-              </div>
-              {(isGeneratingSummary || aiSummary || topStudents.length > 0) && (
-                <section className="ai-summary-card" aria-live="polite">
-                  <h3>Top 3 Students</h3>
-                  {topStudents.length > 0 ? (
-                    <ul className="top-students-list">
-                      {topStudents.map((student, index) => (
-                        <li key={student.student_id}>
-                          <strong>#{index + 1} {student.name}</strong>
-                          <span>({student.department} • {student.year})</span>
-                          <span>Score: {student.score}%</span>
-                          <span>Average: {student.average_percentage}%</span>
-                          <span>Attendance: {student.attendance_percentage}%</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>{isGeneratingSummary ? 'Generating your summary...' : 'No ranking data available yet.'}</p>
-                  )}
-
-                  {aiSummary && (
-                    <>
-                      <h3>AI Performance Summary</h3>
-                      <p>{aiSummary}</p>
-                    </>
-                  )}
-                </section>
-              )}
-            </div>
-
-            <div className="subject-attendance-wrapper">
-              <div className="subject-card">
-                <div className="performance-summary-card">
-                  <div>
-                    <p>Total Score</p>
-                    <strong>
-                      {totalMarksObtained} / {totalMaxMarks || '--'}
-                    </strong>
-                  </div>
-                  <div>
-                    <p>Overall %</p>
-                    <strong>{totalMaxMarks ? `${overallPercentage}%` : '--'}</strong>
-                  </div>
-                  <div>
-                    <p>Attendance</p>
-                    <strong>{attendanceRate !== null ? `${attendanceRate}%` : 'N/A'}</strong>
-                  </div>
-                  <div className="performance-label">
-                    {performanceLabel}
-                  </div>
-                </div>
-                <h3>Subjects</h3>
-                <form onSubmit={handleSubjectSubmit} className="subject-form">
-                  <div className="form-grid">
-                    <label>
-                      Subject Name
-                      <select
-                        name="subject_name"
-                        value={subjectForm.subject_name}
-                        onChange={handleSubjectChange}
-                        required
-                        disabled={!availableSubjects.length}
-                      >
-                        <option value="">Pick subject</option>
-                        {availableSubjects.map((subject) => (
-                          <option key={subject} value={subject}>
-                            {subject}
-                          </option>
-                        ))}
-                      </select>
-                      {!selectedStudent && (
-                        <p className="helper-text">Select a student first to load valid subjects.</p>
-                      )}
-                    </label>
-                    <label>
-                      Marks Obtained
-                      <input
-                        type="number"
-                        name="marks_obtained"
-                        value={subjectForm.marks_obtained}
-                        onChange={handleSubjectChange}
-                        min="0"
-                        required
-                      />
-                    </label>
-                    <label>
-                      Maximum Marks
-                      <input
-                        type="number"
-                        name="max_marks"
-                        value={subjectForm.max_marks}
-                        onChange={handleSubjectChange}
-                        min="1"
-                        required
-                      />
-                    </label>
-                  </div>
-                  {subjectValidationMessages.length > 0 && (
-                    <div className="validation-note">
-                      {subjectValidationMessages.map((message) => (
-                        <p key={message}>{message}</p>
-                      ))}
-                    </div>
-                  )}
-                  <div className="form-actions form-actions-bottom">
-                    <button type="submit" className="primary-button">
-                      {editingSubjectId ? 'Update Subject' : 'Add Subject'}
-                    </button>
-                    {editingSubjectId && (
-                      <button type="button" className="secondary" onClick={resetSubjectForm}>
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </form>
-
-                {selectedStudentSubjects.length === 0 ? (
-                  <p className="empty-note">No subjects added yet.</p>
-                ) : (
-                  <div className="subject-list">
-                    {selectedStudentSubjects.map((subject) => (
-                      <article key={subject.id} className="subject-item">
-                        <div>
-                          <p className="subject-name">{subject.subject_name}</p>
-                          <p className="subject-meta">
-                            Marks: {subject.marks_obtained} / {subject.max_marks}
-                          </p>
-                        </div>
-                        <div className="subject-actions">
-                          <button type="button" className="row-button" onClick={() => handleEditSubject(subject)}>
-                            Edit
-                          </button>
-                          <button type="button" className="row-button secondary" onClick={() => handleDeleteSubject(subject.id)}>
-                            Delete
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="attendance-card">
-                <div className="attendance-card-header">
-                  <h3>Attendance</h3>
-                  {hasSavedAttendance && !isEditingAttendance && (
-                    <button
-                      type="button"
-                      className="row-button"
-                      onClick={() => setIsEditingAttendance(true)}
-                    >
-                      Edit Attendance
-                    </button>
-                  )}
-                </div>
-                {showAttendanceForm ? (
-                  <form onSubmit={handleAttendanceSubmit} className="attendance-form">
-                    <div className="form-grid">
-                      <label>
-                        Total Classes
-                        <input
-                          type="number"
-                          name="total_classes"
-                          min="1"
-                          value={attendanceForm.total_classes}
-                          onChange={handleAttendanceChange}
-                          required
-                        />
-                      </label>
-                      <label>
-                        Classes Attended
-                        <input
-                          type="number"
-                          name="attended_classes"
-                          min="0"
-                          value={attendanceForm.attended_classes}
-                          onChange={handleAttendanceChange}
-                          required
-                        />
-                      </label>
-                    </div>
-                    {attendanceValidationMessages.length > 0 && (
-                      <div className="validation-note">
-                        {attendanceValidationMessages.map((message) => (
-                          <p key={message}>{message}</p>
-                        ))}
-                      </div>
-                    )}
-                    <div className="form-actions form-actions-bottom">
-                      <button type="submit" className="primary-button">
-                        Save Attendance
-                      </button>
-                      {hasSavedAttendance && (
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => {
-                            setAttendanceForm({
-                              total_classes: selectedStudent.attendance?.total_classes ?? '',
-                              attended_classes: selectedStudent.attendance?.attended_classes ?? '',
-                            })
-                            setIsEditingAttendance(false)
-                            setStatus({ message: 'Attendance edit canceled.', error: '' })
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      )}
-                    </div>
-                  </form>
-                ) : (
-                  <div className="attendance-summary-card">
-                    <div className="attendance-summary-row">
-                      <span>Total Classes</span>
-                      <strong>{selectedStudent.attendance?.total_classes ?? '—'}</strong>
-                    </div>
-                    <div className="attendance-summary-row">
-                      <span>Classes Attended</span>
-                      <strong>{selectedStudent.attendance?.attended_classes ?? '—'}</strong>
-                    </div>
-                    <div className="attendance-summary-row">
-                      <span>Attendance %</span>
-                      <strong>{attendanceRate !== null ? `${attendanceRate}%` : 'N/A'}</strong>
-                    </div>
-                    <div className={`attendance-status-pill attendance-${attendanceStatus}`}>
-                      {attendanceStatus === 'good'
-                        ? 'On track'
-                        : attendanceStatus === 'warning'
-                          ? 'Needs focus'
-                          : 'At risk'}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
+        {screen === 'home' && renderHome()}
+        {screen === 'admin-login' && renderAdminLogin()}
+        {screen === 'college-register' && renderCollegeRegister()}
+        {screen === 'college-login' && renderCollegeLogin()}
+        {screen === 'teacher-login' && renderTeacherLogin()}
+        {screen === 'admin-dashboard' && renderAdminDashboard()}
+        {screen === 'college-dashboard' && renderCollegeDashboard()}
+        {screen === 'college-create-teacher' && renderCreateTeacher()}
+        {screen === 'teacher-dashboard' && renderTeacherDashboard()}
+        {screen === 'teacher-add-student' && renderAddStudent()}
       </div>
     </main>
   )

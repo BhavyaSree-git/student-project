@@ -1,16 +1,25 @@
-import os
 import json
+import os
+from datetime import datetime
+from functools import wraps
 from urllib.parse import quote_plus
-from flask import Flask, jsonify, request
+
+from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from openai import APIConnectionError, APIError, AuthenticationError, OpenAI, RateLimitError
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-CORS(app)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'student-management-secret-key')
+CORS(app, supports_credentials=True)
 
-db_url = os.environ.get('DATABASE_URL')
-if not db_url:
+
+def build_db_url():
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        return db_url
+
     db_user = os.environ.get('DATABASE_USER') or os.environ.get('POSTGRES_USER')
     db_pass = os.environ.get('DATABASE_PASSWORD') or os.environ.get('POSTGRES_PASSWORD')
     db_name = os.environ.get('DATABASE_NAME') or os.environ.get('POSTGRES_DB')
@@ -20,519 +29,842 @@ if not db_url:
     if db_user and db_pass and db_name:
         user = quote_plus(db_user)
         password = quote_plus(db_pass)
-        db_url = f'postgresql://{user}:{password}@{db_host}:{db_port}/{db_name}'
-    else:
-        db_url = 'sqlite:///students.db'
+        return f'postgresql://{user}:{password}@{db_host}:{db_port}/{db_name}'
 
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+    return 'sqlite:///students.db'
+
+
+app.config['SQLALCHEMY_DATABASE_URI'] = build_db_url()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-class Student(db.Model):
+
+class Admin(db.Model):
+    __tablename__ = 'admins'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    roll_number = db.Column(db.String(50), nullable=False)
-    email = db.Column(db.String(120), nullable=False)
-    department = db.Column(db.String(100), nullable=False)
-    year = db.Column(db.String(50), nullable=False)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {'id': self.id, 'username': self.username, 'created_at': self.created_at.isoformat()}
+
+
+class College(db.Model):
+    __tablename__ = 'colleges'
+    id = db.Column(db.Integer, primary_key=True)
+    college_name = db.Column(db.String(150), nullable=False)
+    university_name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(150), unique=True, nullable=False)
+    phone = db.Column(db.String(50), nullable=False)
+    address = db.Column(db.String(255), nullable=False)
+    city = db.Column(db.String(100), nullable=False)
+    state = db.Column(db.String(100), nullable=False)
+    country = db.Column(db.String(100), nullable=False)
+    pincode = db.Column(db.String(30), nullable=False)
+    website = db.Column(db.String(150), nullable=True)
+    college_type = db.Column(db.String(50), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    approval_status = db.Column(db.String(30), default='PENDING', nullable=False)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, default=False, nullable=False)
+    deactivation_reason = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    teachers = db.relationship('Teacher', back_populates='college', cascade='all, delete-orphan')
+    students = db.relationship('Student', back_populates='college', cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
             'id': self.id,
+            'college_name': self.college_name,
+            'university_name': self.university_name,
+            'email': self.email,
+            'phone': self.phone,
+            'address': self.address,
+            'city': self.city,
+            'state': self.state,
+            'country': self.country,
+            'pincode': self.pincode,
+            'website': self.website,
+            'college_type': self.college_type,
+            'approval_status': self.approval_status,
+            'rejection_reason': self.rejection_reason,
+            'is_active': self.is_active,
+            'deactivation_reason': self.deactivation_reason,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+        }
+
+
+class Teacher(db.Model):
+    __tablename__ = 'teachers'
+    id = db.Column(db.Integer, primary_key=True)
+    college_id = db.Column(db.Integer, db.ForeignKey('colleges.id'), nullable=False)
+    name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(150), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    department = db.Column(db.String(120), nullable=False)
+    subject = db.Column(db.String(120), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    college = db.relationship('College', back_populates='teachers')
+    students = db.relationship('Student', back_populates='teacher', cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'college_id': self.college_id,
             'name': self.name,
-            'roll_number': self.roll_number,
             'email': self.email,
             'department': self.department,
-            'year': self.year,
+            'subject': self.subject,
+            'is_active': self.is_active,
+            'college_name': self.college.college_name if self.college else None,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
         }
 
-required_fields = ['name', 'roll_number', 'email', 'department', 'year']
-OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-5.4-nano')
 
-
-def normalize_roll_number(value):
-    """Return an integer-form roll number or None when it is invalid."""
-    roll_number = str(value).strip()
-    return roll_number if roll_number.isascii() and roll_number.isdigit() else None
-
-class Subject(db.Model):
+class Student(db.Model):
+    __tablename__ = 'students'
     id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
-    subject_name = db.Column(db.String(120), nullable=False)
-    marks_obtained = db.Column(db.Integer, nullable=False)
-    max_marks = db.Column(db.Integer, nullable=False)
+    college_id = db.Column(db.Integer, db.ForeignKey('colleges.id'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('teachers.id'), nullable=False)
+    student_id = db.Column(db.String(50), nullable=False)
+    name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(150), nullable=False)
+    phone = db.Column(db.String(50), nullable=False)
+    date_of_birth = db.Column(db.String(30), nullable=False)
+    gender = db.Column(db.String(30), nullable=False)
+    department = db.Column(db.String(120), nullable=False)
+    course = db.Column(db.String(120), nullable=False)
+    year = db.Column(db.String(60), nullable=False)
+    section = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    student = db.relationship('Student', back_populates='subjects')
+    college = db.relationship('College', back_populates='students')
+    teacher = db.relationship('Teacher', back_populates='students')
+    marks = db.relationship('Marks', back_populates='student', cascade='all, delete-orphan')
+    attendance = db.relationship('Attendance', back_populates='student', uselist=False, cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
             'id': self.id,
-            'subject_name': self.subject_name,
-            'marks_obtained': self.marks_obtained,
-            'max_marks': self.max_marks,
+            'college_id': self.college_id,
+            'teacher_id': self.teacher_id,
+            'student_id': self.student_id,
+            'name': self.name,
+            'email': self.email,
+            'phone': self.phone,
+            'date_of_birth': self.date_of_birth,
+            'gender': self.gender,
+            'department': self.department,
+            'course': self.course,
+            'year': self.year,
+            'section': self.section,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
         }
 
-class Attendance(db.Model):
+
+class Marks(db.Model):
+    __tablename__ = 'marks'
     id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False, unique=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    subject = db.Column(db.String(120), nullable=False)
+    marks = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    student = db.relationship('Student', back_populates='marks')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'student_id': self.student_id,
+            'subject': self.subject,
+            'marks': self.marks,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+        }
+
+
+class Attendance(db.Model):
+    __tablename__ = 'attendance'
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False, unique=True)
     total_classes = db.Column(db.Integer, default=0, nullable=False)
-    attended_classes = db.Column(db.Integer, default=0, nullable=False)
+    present = db.Column(db.Integer, default=0, nullable=False)
+    absent = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     student = db.relationship('Student', back_populates='attendance')
 
     def to_dict(self):
+        if self.total_classes > 0:
+            attendance_percentage = round((self.present / self.total_classes) * 100, 2)
+        else:
+            attendance_percentage = 0
         return {
             'id': self.id,
+            'student_id': self.student_id,
             'total_classes': self.total_classes,
-            'attended_classes': self.attended_classes,
+            'present': self.present,
+            'absent': self.absent,
+            'attendance_percentage': attendance_percentage,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
         }
 
-Student.subjects = db.relationship(
-    'Subject',
-    back_populates='student',
-    cascade='all, delete-orphan',
-    lazy='select',
-)
-Student.attendance = db.relationship(
-    'Attendance',
-    back_populates='student',
-    uselist=False,
-    cascade='all, delete-orphan',
-    lazy='select',
-)
 
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
 
-def calculate_grade(average_percentage):
-    if average_percentage >= 90:
-        return 'A+'
-    if average_percentage >= 80:
-        return 'A'
-    if average_percentage >= 70:
-        return 'B'
-    if average_percentage >= 60:
-        return 'C'
-    if average_percentage >= 50:
-        return 'D'
-    return 'F'
-
-
-def calculate_attendance_percentage(attendance):
-    if attendance is None or attendance['total_classes'] == 0:
-        return 0
-    return round((attendance['attended_classes'] / attendance['total_classes']) * 100, 1)
-
-
-def attendance_status(attendance_percentage):
-    return 'Good' if attendance_percentage >= 75 else 'Low Attendance'
-
-
-def performance_status(average_percentage, attendance_percentage):
-    if average_percentage >= 75 and attendance_percentage >= 75:
-        return 'Excellent'
-    if average_percentage >= 50 and attendance_percentage >= 75:
-        return 'Good'
-    return 'Needs Improvement'
-
-
-def calculate_student_performance(student):
-    subjects = student.subjects
-    if not subjects:
-        total_marks = 0
-        average_percentage = 0
-    else:
-        total_obtained = sum(subject.marks_obtained for subject in subjects)
-        total_possible = sum(subject.max_marks for subject in subjects)
-        total_marks = total_obtained
-        average_percentage = round((total_obtained / total_possible) * 100, 1) if total_possible else 0
-
-    attendance = student.attendance.to_dict() if student.attendance else {'total_classes': 0, 'attended_classes': 0}
-    attendance_pct = calculate_attendance_percentage(attendance)
-    grade = calculate_grade(average_percentage)
-    attendance_state = attendance_status(attendance_pct)
-    performance_state = performance_status(average_percentage, attendance_pct)
-
-    return {
-        'total_marks': total_marks,
-        'average_percentage': average_percentage,
-        'grade': grade,
-        'attendance_percentage': attendance_pct,
-        'attendance_status': attendance_state,
-        'performance_status': performance_state,
-    }
-
-
-def build_student_summary_data(student):
-    """Create the minimum academic data needed for an AI performance summary."""
-    performance = calculate_student_performance(student)
-    attendance = student.attendance.to_dict() if student.attendance else {
-        'total_classes': 0,
-        'attended_classes': 0,
-    }
-    return {
-        'name': student.name,
-        'department': student.department,
-        'year': student.year,
-        'subjects': [subject.to_dict() for subject in student.subjects],
-        'overall_percentage': performance['average_percentage'],
-        'total_marks': performance['total_marks'],
-        'attendance': attendance,
-        'attendance_percentage': performance['attendance_percentage'],
-    }
-
-
-def calculate_student_rank_score(student):
-    """Return a numeric ranking score for overall student performance."""
-    performance = calculate_student_performance(student)
-    average_percentage = performance['average_percentage']
-    attendance_percentage = performance['attendance_percentage']
-    return round((average_percentage * 0.7) + (attendance_percentage * 0.3), 2)
-
-
-def get_top_students(limit=3):
-    """Return the top students sorted by academic and attendance performance."""
-    students = Student.query.all()
-    ranked = []
-    for student in students:
-        performance = calculate_student_performance(student)
-        ranked.append({
-            'student_id': student.id,
-            'name': student.name,
-            'roll_number': student.roll_number,
-            'department': student.department,
-            'year': student.year,
-            'average_percentage': performance['average_percentage'],
-            'attendance_percentage': performance['attendance_percentage'],
-            'total_marks': performance['total_marks'],
-            'score': calculate_student_rank_score(student),
-        })
-
-    ranked.sort(key=lambda item: (-item['score'], -(item['average_percentage']), -(item['attendance_percentage'])))
-    return ranked[:limit]
 
 with app.app_context():
     db.create_all()
 
-@app.route('/api/hello', methods=['GET'])
-def hello():
-    """Simple API endpoint for backend verification."""
-    return jsonify({
-        'message': 'Hello from Flask backend!'
-    })
-
-@app.route('/api/students', methods=['GET'])
-def list_students():
-    """Return the list of students from the database."""
-    students = Student.query.all()
-    return jsonify([student.to_dict() for student in students])
-
-@app.route('/api/students/<int:student_id>', methods=['GET'])
-def get_student(student_id):
-    """Return a single student by ID, including subjects and attendance."""
-    student = Student.query.get(student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
-
-    performance = calculate_student_performance(student)
-    return jsonify({
-        **student.to_dict(),
-        'subjects': [subject.to_dict() for subject in student.subjects],
-        'attendance': student.attendance.to_dict() if student.attendance else {'total_classes': 0, 'attended_classes': 0},
-        **performance,
-    })
+    admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
+    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    if not Admin.query.filter_by(username=admin_username).first():
+        db.session.add(Admin(username=admin_username, password_hash=generate_password_hash(admin_password)))
+        db.session.commit()
 
 
-@app.route('/api/ai-summary', methods=['GET', 'POST'])
-def generate_top_students_summary():
-    """Generate a top-3 student performance summary and AI narrative."""
-    if not os.environ.get('OPENAI_API_KEY'):
-        return jsonify({'error': 'OpenAI API key is not configured.'}), 503
+def current_user():
+    user = session.get('user')
+    if not user:
+        return None
 
-    limit = 3
-    payload = request.get_json(silent=True) or {}
-    if payload.get('limit'):
-        try:
-            limit = max(1, min(int(payload['limit']), 10))
-        except ValueError:
-            return jsonify({'error': 'limit must be a whole number.'}), 400
-
-    top_students = get_top_students(limit=limit)
-    if not top_students:
-        return jsonify({
-            'top_students': [],
-            'summary': 'No student records are available yet for AI analysis.',
-        })
-
-    instructions = (
-        'You are an educational performance coach. Review the top student list and write a concise '
-        'summary in 120 words or fewer. Mention who is leading, highlight strengths in academic performance '
-        'and attendance, and give one practical improvement suggestion for the group.'
-    )
-
-    try:
-        client = OpenAI()
-        response = client.responses.create(
-            model=OPENAI_MODEL,
-            instructions=instructions,
-            input=json.dumps({'top_students': top_students}),
-            max_output_tokens=250,
-        )
-        summary = response.output_text.strip()
-    except AuthenticationError:
-        return jsonify({'error': 'OpenAI API key is invalid.'}), 503
-    except RateLimitError:
-        return jsonify({'error': 'OpenAI request limit reached. Please try again later.'}), 429
-    except APIConnectionError:
-        return jsonify({'error': 'Unable to connect to OpenAI. Please try again later.'}), 503
-    except APIError:
-        return jsonify({'error': 'Unable to generate the AI summary. Please try again later.'}), 502
-
-    if not summary:
-        return jsonify({'error': 'OpenAI returned an empty summary.'}), 502
-
-    return jsonify({
-        'top_students': top_students,
-        'summary': summary,
-    })
+    role = user.get('role')
+    if role == 'admin':
+        return Admin.query.get(user.get('id'))
+    if role == 'college':
+        return College.query.get(user.get('id'))
+    if role == 'teacher':
+        return Teacher.query.get(user.get('id'))
+    return None
 
 
-@app.route('/api/ai/student-summary', methods=['POST'])
-def generate_student_summary():
-    """Generate a concise, educational performance summary for one student."""
+def require_role(role):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user = current_user()
+            if user is None:
+                return jsonify({'error': 'Unauthorized. Please log in again.'}), 401
+
+            if role == 'admin' and not isinstance(user, Admin):
+                return jsonify({'error': 'Admin access required.'}), 403
+            if role == 'college' and not isinstance(user, College):
+                return jsonify({'error': 'College access required.'}), 403
+            if role == 'teacher' and not isinstance(user, Teacher):
+                return jsonify({'error': 'Teacher access required.'}), 403
+
+            if role == 'college':
+                if user.approval_status != 'APPROVED':
+                    return jsonify({'error': 'Your registration is waiting for Admin approval.'}), 403
+                if not user.is_active:
+                    return jsonify({'error': 'Your college account is currently inactive.'}), 403
+
+            if role == 'teacher':
+                if not user.is_active:
+                    return jsonify({'error': 'Your teacher account is inactive.'}), 403
+                if not user.college or user.college.approval_status != 'APPROVED':
+                    return jsonify({'error': 'Your college is not approved yet.'}), 403
+                if not user.college.is_active:
+                    return jsonify({'error': 'Your college account is currently inactive.'}), 403
+
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/auth/admin/login', methods=['POST'])
+def admin_login():
     data = request.get_json(silent=True) or {}
-    try:
-        student_id = int(data.get('student_id'))
-    except (TypeError, ValueError):
-        return jsonify({'error': 'student_id must be a whole number.'}), 400
+    username = str(data.get('username', '')).strip()
+    password = str(data.get('password', ''))
 
-    student = db.session.get(Student, student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
-    if not os.environ.get('OPENAI_API_KEY'):
-        return jsonify({'error': 'OpenAI API key is not configured.'}), 503
+    admin = Admin.query.filter_by(username=username).first()
+    admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
+    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
-    student_data = build_student_summary_data(student)
-    instructions = (
-        'You are an educational support assistant. Write a supportive student performance '
-        'summary in 100 words or fewer. Use only the provided data. Mention academic performance, '
-        'attendance, strengths, and practical improvement suggestions when the data supports them. '
-        'Do not invent facts, make medical or psychological claims, or use harsh language.'
-    )
+    if not admin:
+        if username == admin_username and password == admin_password:
+            admin = Admin.query.filter_by(username=admin_username).first()
+        else:
+            return jsonify({'error': 'Invalid admin credentials.'}), 401
 
-    try:
-        client = OpenAI()
-        response = client.responses.create(
-            model=OPENAI_MODEL,
-            instructions=instructions,
-            input=json.dumps(student_data),
-            max_output_tokens=250,
-        )
-        summary = response.output_text.strip()
-    except AuthenticationError:
-        return jsonify({'error': 'OpenAI API key is invalid.'}), 503
-    except RateLimitError:
-        return jsonify({'error': 'OpenAI request limit reached. Please try again later.'}), 429
-    except APIConnectionError:
-        return jsonify({'error': 'Unable to connect to OpenAI. Please try again later.'}), 503
-    except APIError:
-        return jsonify({'error': 'Unable to generate the AI summary. Please try again later.'}), 502
+    if not check_password_hash(admin.password_hash, password):
+        if not (username == admin_username and password == admin_password):
+            return jsonify({'error': 'Invalid admin credentials.'}), 401
 
-    if not summary:
-        return jsonify({'error': 'OpenAI returned an empty summary.'}), 502
+    session['user'] = {'role': 'admin', 'id': admin.id}
+    return jsonify({'message': 'Admin login successful.', 'user': admin.to_dict()})
 
-    return jsonify({
-        'student_id': student.id,
-        'summary': summary,
-    })
 
-@app.route('/api/students', methods=['POST'])
-def create_student():
-    """Create a new student in the database."""
-    data = request.get_json() or {}
+@app.route('/api/auth/college/register', methods=['POST'])
+def college_register():
+    data = request.get_json(silent=True) or {}
+    required_fields = [
+        'college_name', 'university_name', 'email', 'phone', 'address', 'city',
+        'state', 'country', 'pincode', 'college_type', 'password', 'confirm_password'
+    ]
     missing = [field for field in required_fields if not str(data.get(field, '')).strip()]
     if missing:
         return jsonify({'error': 'Missing fields: ' + ', '.join(missing)}), 400
 
-    roll_number = normalize_roll_number(data['roll_number'])
-    if roll_number is None:
-        return jsonify({'error': 'Roll number must be a whole number.'}), 400
+    if data['password'] != data['confirm_password']:
+        return jsonify({'error': 'Password and confirm password do not match.'}), 400
 
-    student = Student(
-        name=data['name'].strip(),
-        roll_number=roll_number,
-        email=data['email'].strip(),
-        department=data['department'].strip(),
-        year=data['year'].strip(),
+    email = str(data['email']).strip().lower()
+    if College.query.filter_by(email=email).first():
+        return jsonify({'error': 'A college with this email already exists.'}), 409
+
+    college = College(
+        college_name=str(data['college_name']).strip(),
+        university_name=str(data['university_name']).strip(),
+        email=email,
+        phone=str(data['phone']).strip(),
+        address=str(data['address']).strip(),
+        city=str(data['city']).strip(),
+        state=str(data['state']).strip(),
+        country=str(data['country']).strip(),
+        pincode=str(data['pincode']).strip(),
+        website=str(data.get('website', '')).strip() or None,
+        college_type=str(data['college_type']).strip(),
+        password_hash=generate_password_hash(data['password']),
+        approval_status='PENDING',
+        is_active=False,
     )
-    db.session.add(student)
-    db.session.flush()
-
-    attendance = Attendance(
-        student_id=student.id,
-        total_classes=0,
-        attended_classes=0,
-    )
-    db.session.add(attendance)
+    db.session.add(college)
     db.session.commit()
-    return jsonify(student.to_dict()), 201
+    return jsonify({'message': 'College registration submitted for approval.', 'college': college.to_dict()}), 201
 
-@app.route('/api/students/<int:student_id>', methods=['PUT'])
-def update_student(student_id):
-    """Update an existing student."""
-    student = Student.query.get(student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
 
-    data = request.get_json() or {}
-    if 'roll_number' in data:
-        roll_number = normalize_roll_number(data['roll_number'])
-        if roll_number is None:
-            return jsonify({'error': 'Roll number must be a whole number.'}), 400
-        student.roll_number = roll_number
+@app.route('/api/auth/college/login', methods=['POST'])
+def college_login():
+    data = request.get_json(silent=True) or {}
+    email = str(data.get('email', '')).strip().lower()
+    password = str(data.get('password', ''))
 
-    for field in required_fields:
-        if field == 'roll_number':
-            continue
-        if field in data and str(data[field]).strip():
-            setattr(student, field, str(data[field]).strip())
+    college = College.query.filter_by(email=email).first()
+    if not college or not check_password_hash(college.password_hash, password):
+        return jsonify({'error': 'Invalid college credentials.'}), 401
 
+    if college.approval_status == 'PENDING':
+        return jsonify({'error': 'Your registration is waiting for Admin approval.'}), 403
+    if college.approval_status == 'REJECTED':
+        return jsonify({'error': 'Your college registration was rejected.', 'reason': college.rejection_reason}), 403
+    if not college.is_active:
+        return jsonify({'error': 'Your college account is currently inactive.', 'reason': college.deactivation_reason}), 403
+
+    session['user'] = {'role': 'college', 'id': college.id}
+    return jsonify({'message': 'College login successful.', 'college': college.to_dict()})
+
+
+@app.route('/api/auth/teacher/login', methods=['POST'])
+def teacher_login():
+    data = request.get_json(silent=True) or {}
+    email = str(data.get('email', '')).strip().lower()
+    password = str(data.get('password', ''))
+
+    teacher = Teacher.query.filter_by(email=email).first()
+    if not teacher or not check_password_hash(teacher.password_hash, password):
+        return jsonify({'error': 'Invalid teacher credentials.'}), 401
+
+    if not teacher.is_active:
+        return jsonify({'error': 'Teacher account is inactive.'}), 403
+    if not teacher.college or teacher.college.approval_status != 'APPROVED':
+        return jsonify({'error': 'Your college is not approved.'}), 403
+    if not teacher.college.is_active:
+        return jsonify({'error': 'Your college account is currently inactive.'}), 403
+
+    session['user'] = {'role': 'teacher', 'id': teacher.id}
+    return jsonify({'message': 'Teacher login successful.', 'teacher': teacher.to_dict()})
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'message': 'Logged out successfully.'})
+
+
+@app.route('/api/admin/colleges', methods=['GET'])
+@require_role('admin')
+def admin_colleges():
+    colleges = College.query.order_by(College.created_at.desc()).all()
+    result = []
+    for college in colleges:
+        teacher_count = Teacher.query.filter_by(college_id=college.id).count()
+        student_count = Student.query.filter_by(college_id=college.id).count()
+        result.append({
+            **college.to_dict(),
+            'teacher_count': teacher_count,
+            'student_count': student_count,
+        })
+    return jsonify(result)
+
+
+@app.route('/api/admin/dashboard', methods=['GET'])
+@require_role('admin')
+def admin_dashboard():
+    stats = {
+        'total_colleges': College.query.count(),
+        'pending_colleges': College.query.filter_by(approval_status='PENDING').count(),
+        'approved_colleges': College.query.filter_by(approval_status='APPROVED').count(),
+        'rejected_colleges': College.query.filter_by(approval_status='REJECTED').count(),
+        'active_colleges': College.query.filter_by(is_active=True).count(),
+        'inactive_colleges': College.query.filter_by(is_active=False).count(),
+        'total_teachers': Teacher.query.count(),
+        'total_students': Student.query.count(),
+    }
+    return jsonify(stats)
+
+
+@app.route('/api/admin/colleges/<int:college_id>/approve', methods=['POST'])
+@require_role('admin')
+def approve_college(college_id):
+    college = College.query.get_or_404(college_id)
+    college.approval_status = 'APPROVED'
+    college.is_active = True
+    college.rejection_reason = None
+    college.deactivation_reason = None
+    college.updated_at = datetime.utcnow()
     db.session.commit()
-    return jsonify(student.to_dict())
+    return jsonify({'message': 'College approved successfully.', 'college': college.to_dict()})
 
-@app.route('/api/students/<int:student_id>', methods=['DELETE'])
-def delete_student(student_id):
-    """Delete a student from the database."""
-    student = Student.query.get(student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
 
-    db.session.delete(student)
+@app.route('/api/admin/colleges/<int:college_id>/reject', methods=['POST'])
+@require_role('admin')
+def reject_college(college_id):
+    college = College.query.get_or_404(college_id)
+    data = request.get_json(silent=True) or {}
+    reason = str(data.get('reason', '')).strip() or 'No reason provided.'
+    college.approval_status = 'REJECTED'
+    college.is_active = False
+    college.rejection_reason = reason
+    college.deactivation_reason = None
+    college.updated_at = datetime.utcnow()
     db.session.commit()
-    return jsonify({'message': 'Student deleted'})
+    return jsonify({'message': 'College rejected successfully.', 'college': college.to_dict()})
 
-@app.route('/api/students/<int:student_id>/subjects', methods=['GET'])
-def list_subjects(student_id):
-    """List subjects for a student."""
-    student = Student.query.get(student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
-    return jsonify([subject.to_dict() for subject in student.subjects])
 
-@app.route('/api/students/<int:student_id>/subjects', methods=['POST'])
-def create_subject(student_id):
-    """Add a subject for a student."""
-    student = Student.query.get(student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
-
-    data = request.get_json() or {}
-    required_subject_fields = ['subject_name', 'marks_obtained', 'max_marks']
-    missing = [field for field in required_subject_fields if not str(data.get(field, '')).strip()]
-    if missing:
-        return jsonify({'error': 'Missing fields: ' + ', '.join(missing)}), 400
-
-    try:
-        marks_obtained = int(data['marks_obtained'])
-        max_marks = int(data['max_marks'])
-    except ValueError:
-        return jsonify({'error': 'Marks must be whole numbers'}), 400
-
-    subject = Subject(
-        student_id=student.id,
-        subject_name=data['subject_name'].strip(),
-        marks_obtained=marks_obtained,
-        max_marks=max_marks,
-    )
-    db.session.add(subject)
+@app.route('/api/admin/colleges/<int:college_id>/activate', methods=['POST'])
+@require_role('admin')
+def activate_college(college_id):
+    college = College.query.get_or_404(college_id)
+    if college.approval_status != 'APPROVED':
+        return jsonify({'error': 'Only approved colleges can be activated.'}), 400
+    college.is_active = True
+    college.deactivation_reason = None
+    college.updated_at = datetime.utcnow()
     db.session.commit()
-    return jsonify(subject.to_dict()), 201
+    return jsonify({'message': 'College activated successfully.', 'college': college.to_dict()})
 
-@app.route('/api/students/<int:student_id>/subjects/<int:subject_id>', methods=['PUT'])
-def update_subject(student_id, subject_id):
-    """Update a subject for a student."""
-    subject = Subject.query.filter_by(id=subject_id, student_id=student_id).first()
-    if subject is None:
-        return jsonify({'error': 'Subject not found'}), 404
 
-    data = request.get_json() or {}
-    if 'subject_name' in data and str(data['subject_name']).strip():
-        subject.subject_name = data['subject_name'].strip()
-    if 'marks_obtained' in data and str(data['marks_obtained']).strip():
-        try:
-            subject.marks_obtained = int(data['marks_obtained'])
-        except ValueError:
-            return jsonify({'error': 'Marks obtained must be a number'}), 400
-    if 'max_marks' in data and str(data['max_marks']).strip():
-        try:
-            subject.max_marks = int(data['max_marks'])
-        except ValueError:
-            return jsonify({'error': 'Max marks must be a number'}), 400
-
+@app.route('/api/admin/colleges/<int:college_id>/deactivate', methods=['POST'])
+@require_role('admin')
+def deactivate_college(college_id):
+    college = College.query.get_or_404(college_id)
+    data = request.get_json(silent=True) or {}
+    reason = str(data.get('reason', '')).strip() or 'No reason provided.'
+    college.is_active = False
+    college.deactivation_reason = reason
+    college.updated_at = datetime.utcnow()
     db.session.commit()
-    return jsonify(subject.to_dict())
+    return jsonify({'message': 'College deactivated successfully.', 'college': college.to_dict()})
 
-@app.route('/api/students/<int:student_id>/subjects/<int:subject_id>', methods=['DELETE'])
-def delete_subject(student_id, subject_id):
-    """Delete a subject for a student."""
-    subject = Subject.query.filter_by(id=subject_id, student_id=student_id).first()
-    if subject is None:
-        return jsonify({'error': 'Subject not found'}), 404
 
-    db.session.delete(subject)
-    db.session.commit()
-    return jsonify({'message': 'Subject deleted'})
-
-@app.route('/api/students/<int:student_id>/attendance', methods=['GET'])
-def get_attendance(student_id):
-    """Return attendance record for a student."""
-    student = Student.query.get(student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
-
-    if student.attendance is None:
-        return jsonify({'total_classes': 0, 'attended_classes': 0})
-    return jsonify(student.attendance.to_dict())
-
-@app.route('/api/students/<int:student_id>/attendance', methods=['PUT'])
-def update_attendance(student_id):
-    """Create or update attendance for a student."""
-    student = Student.query.get(student_id)
-    if student is None:
-        return jsonify({'error': 'Student not found'}), 404
-
-    data = request.get_json() or {}
-    required_attendance_fields = ['total_classes', 'attended_classes']
-    missing = [field for field in required_attendance_fields if not str(data.get(field, '')).strip()]
-    if missing:
-        return jsonify({'error': 'Missing fields: ' + ', '.join(missing)}), 400
-
-    try:
-        total = int(data['total_classes'])
-        attended = int(data['attended_classes'])
-    except ValueError:
-        return jsonify({'error': 'Attendance values must be whole numbers'}), 400
-
-    if attended > total:
-        return jsonify({'error': 'Attended classes cannot be greater than total classes'}), 400
-
-    if student.attendance is None:
-        attendance = Attendance(
-            student_id=student.id,
-            total_classes=total,
-            attended_classes=attended,
-        )
-        db.session.add(attendance)
-    else:
-        student.attendance.total_classes = total
-        student.attendance.attended_classes = attended
-
-    db.session.commit()
-    return jsonify(student.attendance.to_dict() if student.attendance else {
-        'total_classes': total,
-        'attended_classes': attended,
+@app.route('/api/college/profile', methods=['GET'])
+@require_role('college')
+def college_profile():
+    college = current_user()
+    return jsonify({
+        **college.to_dict(),
+        'total_teachers': Teacher.query.filter_by(college_id=college.id).count(),
+        'total_students': Student.query.filter_by(college_id=college.id).count(),
     })
 
+
+@app.route('/api/college/teachers', methods=['GET'])
+@require_role('college')
+def college_teachers():
+    teacher_list = Teacher.query.filter_by(college_id=current_user().id).order_by(Teacher.created_at.desc()).all()
+    return jsonify([teacher.to_dict() for teacher in teacher_list])
+
+
+@app.route('/api/college/teachers', methods=['POST'])
+@require_role('college')
+def create_teacher_for_college():
+    college = current_user()
+    data = request.get_json(silent=True) or {}
+    required_fields = ['name', 'email', 'password', 'confirm_password', 'department', 'subject']
+    missing = [field for field in required_fields if not str(data.get(field, '')).strip()]
+    if missing:
+        return jsonify({'error': 'Missing fields: ' + ', '.join(missing)}), 400
+    if data['password'] != data['confirm_password']:
+        return jsonify({'error': 'Password and confirm password do not match.'}), 400
+
+    email = str(data['email']).strip().lower()
+    if Teacher.query.filter_by(email=email).first():
+        return jsonify({'error': 'A teacher with this email already exists.'}), 409
+
+    teacher = Teacher(
+        college_id=college.id,
+        name=str(data['name']).strip(),
+        email=email,
+        password_hash=generate_password_hash(data['password']),
+        department=str(data['department']).strip(),
+        subject=str(data['subject']).strip(),
+        is_active=True,
+    )
+    db.session.add(teacher)
+    db.session.commit()
+    return jsonify({'message': 'Teacher created successfully.', 'teacher': teacher.to_dict()}), 201
+
+
+@app.route('/api/teacher/profile', methods=['GET'])
+@require_role('teacher')
+def teacher_profile():
+    teacher = current_user()
+    return jsonify({
+        'id': teacher.id,
+        'name': teacher.name,
+        'email': teacher.email,
+        'department': teacher.department,
+        'subject': teacher.subject,
+        'college_name': teacher.college.college_name,
+        'is_active': teacher.is_active,
+    })
+
+
+@app.route('/api/teacher/dashboard', methods=['GET'])
+@require_role('teacher')
+def teacher_dashboard():
+    teacher = current_user()
+    students = Student.query.filter_by(teacher_id=teacher.id).all()
+    average_marks = 0
+    average_attendance = 0
+
+    if students:
+        student_mark_values = []
+        student_attendance_values = []
+        for student in students:
+            mark_values = [mark.marks for mark in student.marks]
+            if mark_values:
+                student_mark_values.append(round(sum(mark_values) / len(mark_values), 2))
+            attendance = student.attendance
+            if attendance and attendance.total_classes > 0:
+                student_attendance_values.append(round((attendance.present / attendance.total_classes) * 100, 2))
+
+        if student_mark_values:
+            average_marks = round(sum(student_mark_values) / len(student_mark_values), 2)
+        if student_attendance_values:
+            average_attendance = round(sum(student_attendance_values) / len(student_attendance_values), 2)
+
+    return jsonify({
+        'teacher_name': teacher.name,
+        'college_name': teacher.college.college_name,
+        'department': teacher.department,
+        'subject': teacher.subject,
+        'total_students': len(students),
+        'average_marks': average_marks,
+        'average_attendance': average_attendance,
+    })
+
+
+@app.route('/api/teacher/students', methods=['GET'])
+@require_role('teacher')
+def teacher_students():
+    students = Student.query.filter_by(teacher_id=current_user().id).order_by(Student.created_at.desc()).all()
+    return jsonify([student.to_dict() for student in students])
+
+
+@app.route('/api/students', methods=['POST'])
+@require_role('teacher')
+def create_student_route():
+    teacher = current_user()
+    data = request.get_json(silent=True) or {}
+    required_fields = ['student_id', 'name', 'email', 'phone', 'date_of_birth', 'gender', 'department', 'course', 'year', 'section']
+    missing = [field for field in required_fields if not str(data.get(field, '')).strip()]
+    if missing:
+        return jsonify({'error': 'Missing fields: ' + ', '.join(missing)}), 400
+
+    student = Student(
+        college_id=teacher.college_id,
+        teacher_id=teacher.id,
+        student_id=str(data['student_id']).strip(),
+        name=str(data['name']).strip(),
+        email=str(data['email']).strip().lower(),
+        phone=str(data['phone']).strip(),
+        date_of_birth=str(data['date_of_birth']).strip(),
+        gender=str(data['gender']).strip(),
+        department=str(data['department']).strip(),
+        course=str(data['course']).strip(),
+        year=str(data['year']).strip(),
+        section=str(data['section']).strip(),
+    )
+    db.session.add(student)
+    db.session.commit()
+    return jsonify({'message': 'Student added successfully.', 'student': student.to_dict()}), 201
+
+
+@app.route('/api/students/<int:student_id>', methods=['GET'])
+@require_role('teacher')
+def get_student_details(student_id):
+    student = Student.query.get_or_404(student_id)
+    if student.teacher_id != current_user().id:
+        return jsonify({'error': 'You are not authorized to view this student.'}), 403
+    payload = student.to_dict()
+    payload['marks'] = [mark.to_dict() for mark in student.marks]
+    payload['attendance'] = student.attendance.to_dict() if student.attendance else {'student_id': student.id, 'total_classes': 0, 'present': 0, 'absent': 0, 'attendance_percentage': 0}
+    return jsonify(payload)
+
+
+@app.route('/api/students/<int:student_id>', methods=['PUT'])
+@require_role('teacher')
+def update_student_route(student_id):
+    student = Student.query.get_or_404(student_id)
+    if student.teacher_id != current_user().id:
+        return jsonify({'error': 'You are not authorized to update this student.'}), 403
+
+    data = request.get_json(silent=True) or {}
+    for field in ['student_id', 'name', 'email', 'phone', 'date_of_birth', 'gender', 'department', 'course', 'year', 'section']:
+        if field in data and str(data[field]).strip():
+            setattr(student, field, str(data[field]).strip())
+    student.email = student.email.lower()
+    db.session.commit()
+    return jsonify({'message': 'Student updated successfully.', 'student': student.to_dict()})
+
+
+@app.route('/api/students/<int:student_id>', methods=['DELETE'])
+@require_role('teacher')
+def delete_student_route(student_id):
+    student = Student.query.get_or_404(student_id)
+    if student.teacher_id != current_user().id:
+        return jsonify({'error': 'You are not authorized to delete this student.'}), 403
+    db.session.delete(student)
+    db.session.commit()
+    return jsonify({'message': 'Student deleted successfully.'})
+
+
+@app.route('/api/marks', methods=['GET'])
+@require_role('teacher')
+def get_marks():
+    teacher = current_user()
+    student_ids = [student.id for student in Student.query.filter_by(teacher_id=teacher.id).all()]
+    if not student_ids:
+        return jsonify([])
+    marks = Marks.query.filter(Marks.student_id.in_(student_ids)).order_by(Marks.created_at.desc()).all()
+    return jsonify([mark.to_dict() for mark in marks])
+
+
+@app.route('/api/marks', methods=['POST'])
+@require_role('teacher')
+def create_mark():
+    teacher = current_user()
+    data = request.get_json(silent=True) or {}
+    student_id = data.get('student_id')
+    subject = str(data.get('subject', '')).strip()
+    marks_value = data.get('marks')
+
+    if not student_id or not subject or marks_value is None:
+        return jsonify({'error': 'student_id, subject and marks are required.'}), 400
+
+    student = Student.query.get(student_id)
+    if not student or student.teacher_id != teacher.id:
+        return jsonify({'error': 'Student not found or not assigned to your class.'}), 403
+
+    try:
+        marks_value = float(marks_value)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Marks must be numeric.'}), 400
+
+    mark_record = Marks.query.filter_by(student_id=student.id, subject=subject).first()
+    if mark_record:
+        mark_record.marks = marks_value
+        mark_record.updated_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'message': 'Marks updated successfully.', 'marks': mark_record.to_dict()})
+
+    record = Marks(student_id=student.id, subject=subject, marks=marks_value)
+    db.session.add(record)
+    db.session.commit()
+    return jsonify({'message': 'Marks added successfully.', 'marks': record.to_dict()}), 201
+
+
+@app.route('/api/marks/<int:mark_id>', methods=['PUT'])
+@require_role('teacher')
+def update_mark(mark_id):
+    mark = Marks.query.get_or_404(mark_id)
+    teacher = current_user()
+    if mark.student.teacher_id != teacher.id:
+        return jsonify({'error': 'You are not authorized to update these marks.'}), 403
+
+    data = request.get_json(silent=True) or {}
+    if 'subject' in data and str(data['subject']).strip():
+        mark.subject = str(data['subject']).strip()
+    if 'marks' in data and data['marks'] is not None:
+        try:
+            mark.marks = float(data['marks'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Marks must be numeric.'}), 400
+    db.session.commit()
+    return jsonify({'message': 'Marks updated successfully.', 'marks': mark.to_dict()})
+
+
+@app.route('/api/attendance', methods=['GET'])
+@require_role('teacher')
+def get_attendance_records():
+    teacher = current_user()
+    student_ids = [student.id for student in Student.query.filter_by(teacher_id=teacher.id).all()]
+    if not student_ids:
+        return jsonify([])
+    records = Attendance.query.filter(Attendance.student_id.in_(student_ids)).order_by(Attendance.created_at.desc()).all()
+    return jsonify([record.to_dict() for record in records])
+
+
+@app.route('/api/attendance', methods=['POST'])
+def create_attendance_record():
+    teacher = current_user()
+    data = request.get_json(silent=True) or {}
+    student_id = data.get('student_id')
+    total_classes = data.get('total_classes')
+    present = data.get('present')
+
+    if student_id is None or total_classes is None or present is None:
+        return jsonify({'error': 'student_id, total_classes and present are required.'}), 400
+
+    student = Student.query.get(student_id)
+    if not student or student.teacher_id != teacher.id:
+        return jsonify({'error': 'Student not found or not assigned to your class.'}), 403
+
+    try:
+        total_classes = int(total_classes)
+        present = int(present)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Attendance values must be numbers.'}), 400
+
+    if total_classes < 0 or present < 0 or present > total_classes:
+        return jsonify({'error': 'Invalid attendance values.'}), 400
+
+    absent = total_classes - present
+    if student.attendance:
+        student.attendance.total_classes = total_classes
+        student.attendance.present = present
+        student.attendance.absent = absent
+        student.attendance.updated_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'message': 'Attendance updated successfully.', 'attendance': student.attendance.to_dict()})
+
+    record = Attendance(student_id=student.id, total_classes=total_classes, present=present, absent=absent)
+    db.session.add(record)
+    db.session.commit()
+    return jsonify({'message': 'Attendance added successfully.', 'attendance': record.to_dict()}), 201
+
+
+@app.route('/api/attendance/<int:attendance_id>', methods=['PUT'])
+@require_role('teacher')
+def update_attendance_record(attendance_id):
+    record = Attendance.query.get_or_404(attendance_id)
+    teacher = current_user()
+    if record.student.teacher_id != teacher.id:
+        return jsonify({'error': 'You are not authorized to update this attendance record.'}), 403
+
+    data = request.get_json(silent=True) or {}
+    total_classes = data.get('total_classes', record.total_classes)
+    present = data.get('present', record.present)
+
+    try:
+        total_classes = int(total_classes)
+        present = int(present)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Attendance values must be numbers.'}), 400
+
+    if total_classes < 0 or present < 0 or present > total_classes:
+        return jsonify({'error': 'Invalid attendance values.'}), 400
+
+    record.total_classes = total_classes
+    record.present = present
+    record.absent = total_classes - present
+    record.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'message': 'Attendance updated successfully.', 'attendance': record.to_dict()})
+
+
+@app.route('/api/ai/summary', methods=['GET'])
+@require_role('teacher')
+def ai_summary():
+    teacher = current_user()
+    students = Student.query.filter_by(teacher_id=teacher.id).all()
+    if not students:
+        return jsonify({'top_students': [], 'summary': 'No student data available for AI summary.'})
+
+    ranked_students = []
+    for student in students:
+        mark_values = [mark.marks for mark in student.marks]
+        mark_percentage = round(sum(mark_values) / len(mark_values), 2) if mark_values else 0
+        attendance = student.attendance
+        attendance_percentage = 0
+        if attendance and attendance.total_classes > 0:
+            attendance_percentage = round((attendance.present / attendance.total_classes) * 100, 2)
+        overall_score = round((mark_percentage * 0.70) + (attendance_percentage * 0.30), 2)
+        ranked_students.append({
+            'student_id': student.id,
+            'name': student.name,
+            'marks': mark_percentage,
+            'attendance': attendance_percentage,
+            'overall_score': overall_score,
+        })
+
+    ranked_students.sort(key=lambda item: item['overall_score'], reverse=True)
+    top_3 = ranked_students[:3]
+
+    if not os.environ.get('OPENAI_API_KEY'):
+        return jsonify({'top_students': top_3, 'summary': 'OpenAI key is not configured.'})
+
+    try:
+        client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+        payload = {
+            'top_students': top_3,
+            'context': 'These are sorted by backend-calculated overall score from marks and attendance.'
+        }
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {'role': 'system', 'content': 'You are an educational performance assistant. Summarize the top 3 students using only the supplied data and keep the response concise.'},
+                {'role': 'user', 'content': json.dumps(payload)}
+            ],
+            temperature=0.5,
+            max_tokens=250,
+        )
+        summary = response.choices[0].message.content.strip()
+    except AuthenticationError:
+        return jsonify({'top_students': top_3, 'summary': 'OpenAI API key is invalid.'}), 503
+    except RateLimitError:
+        return jsonify({'top_students': top_3, 'summary': 'OpenAI rate limit reached. Please try again later.'}), 429
+    except APIConnectionError:
+        return jsonify({'top_students': top_3, 'summary': 'Unable to connect to OpenAI. Please try again later.'}), 503
+    except APIError:
+        return jsonify({'top_students': top_3, 'summary': 'Unable to generate AI summary right now.'}), 502
+
+    return jsonify({'top_students': top_3, 'summary': summary})
+
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('FLASK_DEBUG', '1') == '1'
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=os.environ.get('FLASK_DEBUG', '1') == '1')
