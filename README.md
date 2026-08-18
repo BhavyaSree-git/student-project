@@ -49,4 +49,4 @@ python backend/app.py
 curl -X POST http://localhost:5000/api/ai/student-summary -H "Content-Type: application/json" -d '{"student_id":1}'
 ```
 
-Do not commit your `.env` with secret keys to git. Add `.env` to `.gitignore` if not already ignored.
+Do not commit your `.env` with secret keys to git. Add `.env` to `.gitignore` if not already ignored .
