@@ -407,12 +407,13 @@ class Attendance(db.Model):
 
 def ensure_teacher_schema():
     """Add teacher columns that were introduced after the original database schema."""
+    boolean_default = 'BOOLEAN NOT NULL DEFAULT FALSE' if db.engine.dialect.name == 'postgresql' else 'BOOLEAN NOT NULL DEFAULT 0'
     extra_columns = {
         'teachers': [
             ('phone', 'VARCHAR(50)'),
             ('employee_id', 'VARCHAR(80)'),
             ('designation', 'VARCHAR(100)'),
-            ('force_password_reset', 'BOOLEAN NOT NULL DEFAULT 0'),
+            ('force_password_reset', boolean_default),
         ],
     }
 
