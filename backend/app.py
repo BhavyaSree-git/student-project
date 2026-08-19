@@ -13,7 +13,10 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 
 def load_local_env_file():
     """Load root .env for direct local runs without overriding real environment variables."""
@@ -51,6 +54,7 @@ CORS(
         'http://127.0.0.1:5174',
         'http://localhost:3000',
         'http://localhost:5000',
+        r'^http://192\.168\.\d{1,3}\.\d{1,3}:\d+$',
     ],
 )
 

@@ -1,4 +1,10 @@
-const API_BASE = 'http://localhost:5000/api'
+// In a browser, localhost means the visitor's own device. Use the page hostname so
+// the frontend also works when accessed through a server IP or domain.
+const API_BASE = import.meta.env.VITE_API_BASE || (
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:5000/api`
+    : 'http://localhost:5000/api'
+)
 
 function extractErrorMessage(body, status) {
   if (body && typeof body === 'object') {
