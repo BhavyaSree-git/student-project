@@ -12,7 +12,8 @@ jobs:
     steps:
       - name: Deploy application
         run: |
-          cd /home/bhavyasree/student-project
-          git pull origin main
-          docker compose build
-          docker compose up -d
+          cd /home/bhavyasree/student-projects
+          git fetch origin main
+          git reset --hard origin/main
+          docker compose up -d --build
+          docker compose ps
