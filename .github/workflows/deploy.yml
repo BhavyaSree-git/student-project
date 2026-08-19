@@ -12,36 +12,8 @@ jobs:
     steps:
       - name: Deploy application
         run: |
-          echo "Current user:"
-          whoami
-
-          echo "Home directory:"
-          echo "$HOME"
-
-          echo "Current directory:"
-          pwd
-
-          echo "Home contents:"
-          ls -la "$HOME"
-
-          echo "Finding student-projects directory:"
-          find "$HOME" -maxdepth 3 -type d -name "student-projects" 2>/dev/null
-
-          PROJECT_DIR=$(find "$HOME" -maxdepth 3 -type d -name "student-projects" 2>/dev/null | head -n 1)
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: student-projects directory not found"
-            exit 1
-          fi
-
-          echo "Using project directory: $PROJECT_DIR"
-
-          cd "$PROJECT_DIR"
-
+          cd /home/bhavyasree/student-project
           git fetch origin main
           git reset --hard origin/main
-
           docker compose down
           docker compose up -d --build
-
-          docker compose ps
