@@ -7,7 +7,6 @@ export default function CreateTeacher({ onTeacherCreated, onCancel, departments:
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    phone: '',
     employee_id: '',
     designation: '',
     password: '',
@@ -129,25 +128,14 @@ export default function CreateTeacher({ onTeacherCreated, onCancel, departments:
           </div>
         </div>
 
-        <div className="two-column">
-          <div>
-            <label className="form-label">Phone</label>
-            <input
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-              placeholder="+1 555 123 4567"
-            />
-          </div>
-          <div>
-            <label className="form-label">Employee ID</label>
-            <input
-              name="employee_id"
-              value={formData.employee_id}
-              onChange={handleChange}
-              placeholder="EMP-1001"
-            />
-          </div>
+        <div>
+          <label className="form-label">Employee ID</label>
+          <input
+            name="employee_id"
+            value={formData.employee_id}
+            onChange={handleChange}
+            placeholder="EMP-1001"
+          />
         </div>
 
         <div className="two-column">

@@ -249,7 +249,6 @@ class Teacher(db.Model):
     college_id = db.Column(db.Integer, db.ForeignKey('colleges.id'), nullable=False)
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(150), unique=True, nullable=False)
-    phone = db.Column(db.String(50), nullable=True)
     employee_id = db.Column(db.String(80), nullable=True)
     designation = db.Column(db.String(100), nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
@@ -269,7 +268,6 @@ class Teacher(db.Model):
             'college_id': self.college_id,
             'name': self.name,
             'email': self.email,
-            'phone': self.phone,
             'employee_id': self.employee_id,
             'designation': self.designation,
             'department': self.department,
@@ -406,11 +404,10 @@ class Attendance(db.Model):
 # ---------------------------------------------------------
 
 def ensure_teacher_schema():
-    """Add teacher columns that were introduced after the original database schema."""
+    """Keep the teacher table aligned with the current application schema."""
     boolean_default = 'BOOLEAN NOT NULL DEFAULT FALSE' if db.engine.dialect.name == 'postgresql' else 'BOOLEAN NOT NULL DEFAULT 0'
     extra_columns = {
         'teachers': [
-            ('phone', 'VARCHAR(50)'),
             ('employee_id', 'VARCHAR(80)'),
             ('designation', 'VARCHAR(100)'),
             ('force_password_reset', boolean_default),
@@ -426,6 +423,11 @@ def ensure_teacher_schema():
             for column_name, column_type in columns:
                 if column_name not in existing:
                     conn.execute(db.text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}'))
+
+            # Phone is no longer stored for teachers. Remove the legacy column
+            # from databases that were created with an older version of the app.
+            if 'phone' in existing:
+                conn.execute(db.text(f'ALTER TABLE {table_name} DROP COLUMN phone'))
 
 
 with app.app_context():
@@ -947,7 +949,6 @@ def create_teacher_for_college():
         college_id=college.id,
         name=str(data['name']).strip(),
         email=email,
-        phone=str(data.get('phone', '')).strip() or None,
         employee_id=str(data.get('employee_id', '')).strip() or None,
         designation=str(data.get('designation', '')).strip() or None,
         password_hash=generate_password_hash(data['password']),
