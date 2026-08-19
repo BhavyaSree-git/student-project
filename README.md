@@ -50,3 +50,7 @@ curl -X POST http://localhost:5000/api/ai/student-summary -H "Content-Type: appl
 ```
 
 Do not commit your `.env` with secret keys to git. Add `.env` to `.gitignore` if not already ignored .
+
+## Teacher credential emails
+
+When a college creates a teacher, the system emails the teacher's temporary login credentials and requires a password change after their first sign-in. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM` in `.env`. For Gmail, use an App Password rather than your normal account password.
