@@ -11,6 +11,7 @@ from urllib.parse import quote_plus
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
@@ -404,12 +405,8 @@ class Attendance(db.Model):
 # DATABASE INITIALIZATION & DEFAULT SEED
 # ---------------------------------------------------------
 
-def ensure_sqlite_schema():
-    """Add columns created after the original SQLite file so old local DBs keep working."""
-    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-    if not str(uri).startswith('sqlite'):
-        return
-
+def ensure_teacher_schema():
+    """Add teacher columns that were introduced after the original database schema."""
     extra_columns = {
         'teachers': [
             ('phone', 'VARCHAR(50)'),
@@ -420,12 +417,11 @@ def ensure_sqlite_schema():
     }
 
     with db.engine.begin() as conn:
+        inspector = inspect(conn)
         for table_name, columns in extra_columns.items():
-            existing = {
-                row[1] for row in conn.execute(db.text(f'PRAGMA table_info({table_name})')).fetchall()
-            }
-            if not existing:
+            if table_name not in inspector.get_table_names():
                 continue
+            existing = {column['name'] for column in inspector.get_columns(table_name)}
             for column_name, column_type in columns:
                 if column_name not in existing:
                     conn.execute(db.text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}'))
@@ -433,7 +429,7 @@ def ensure_sqlite_schema():
 
 with app.app_context():
     db.create_all()
-    ensure_sqlite_schema()
+    ensure_teacher_schema()
 
     admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
     admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
