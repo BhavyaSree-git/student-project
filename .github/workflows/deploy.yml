@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Deploy application
         run: |
-          cd /home/bhavyasree/student-projects
+          cd ~/student-projects
           git fetch origin main
           git reset --hard origin/main
           docker compose up -d --build
